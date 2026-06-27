@@ -23,6 +23,11 @@ CREDIT_HOLD_DURATION = 2
 CREDIT_FADE_DURATION = 1.5
 FINAL_BLACK_DURATION = 1
 
+# セクションアニメーション設定
+SECTION_APPEAR_DURATION = 1.0
+SECTION_HOLD_DURATION = 3.0
+SECTION_FADE_DURATION = 1.0
+
 TITLE_FONT_SIZE = 380
 CREDIT_FONT_SIZE = 120
 SECTION_FONT_SIZE = 180
@@ -329,7 +334,7 @@ def draw_subtitle(frame, text, font):
 # =========================
 # 音声ミックス・マージ処理
 # =========================
-def mix_title_audio(title_wav, credit_wav, output_wav, total_duration):
+def mix_title_audio(title_wav, credit_wav, output_wav, total_duration, title_hold=1.5):
     with wave.open(title_wav, "rb") as w1:
         params = w1.getparams()
         framerate = params.framerate
@@ -348,7 +353,9 @@ def mix_title_audio(title_wav, credit_wav, output_wav, total_duration):
     arr2 = np.frombuffer(data2, dtype=dtype)
 
     offset1 = int(1.0 * framerate) * nchannels
-    offset2 = int(7.5 * framerate) * nchannels
+    # タイトル出現(3s) + タイトルホールド(title_hold) + 黒転(2s) + 暗転ポーズ(0.5s) + クレジット出現遅延(0.5s)
+    offset2_sec = 3.0 + title_hold + 2.0 + 0.5 + 0.5
+    offset2 = int(offset2_sec * framerate) * nchannels
 
     mixed[offset1 : offset1 + len(arr1)] = arr1[:len(mixed) - offset1]
     mixed[offset2 : offset2 + len(arr2)] = arr2[:len(mixed) - offset2]
@@ -359,7 +366,7 @@ def mix_title_audio(title_wav, credit_wav, output_wav, total_duration):
         out.setframerate(framerate)
         out.writeframes(mixed.tobytes())
 
-def create_full_audio(title_wav, credit_wav, body_wav, output_wav, opening_duration, has_section=False, section_wav=None, section_video_duration=0.0):
+def create_full_audio(title_wav, credit_wav, body_wav, output_wav, opening_duration, has_section=False, section_wav=None, section_video_duration=0.0, title_hold=1.5, credit_hold=2.0):
     with wave.open(title_wav, "rb") as w1:
         params = w1.getparams()
         framerate = params.framerate
@@ -371,11 +378,21 @@ def create_full_audio(title_wav, credit_wav, body_wav, output_wav, opening_durat
         data2 = w2.readframes(w2.getnframes())
 
     with wave.open(body_wav, "rb") as w_body:
+        body_params = w_body.getparams()
+        if (body_params.framerate != framerate or 
+            body_params.nchannels != nchannels or 
+            body_params.sampwidth != sampwidth):
+            raise ValueError(
+                f"音声ファイルのフォーマットが一致しません。\n"
+                f"タイトル(001): {framerate}Hz, {nchannels}ch, {sampwidth}bytes\n"
+                f"本文: {body_params.framerate}Hz, {body_params.nchannels}ch, {body_params.sampwidth}bytes\n"
+                f"すべての音声ファイルを同じフォーマット（サンプリングレート・チャンネル数・ビット数）で統一してください。"
+            )
         body_data = w_body.readframes(w_body.getnframes())
 
     dtype = np.int16 if sampwidth == 2 else np.uint8
-    # タイトル＋クレジットの元のオープニング動画は13秒固定
-    title_credit_duration = 13.0
+    # 動的なタイトル＋クレジットのオープニング動画の総時間
+    title_credit_duration = 9.5 + title_hold + credit_hold
     title_credit_samples = int(title_credit_duration * framerate)
     opening_audio = np.zeros(title_credit_samples * nchannels, dtype=dtype)
 
@@ -383,7 +400,9 @@ def create_full_audio(title_wav, credit_wav, body_wav, output_wav, opening_durat
     arr2 = np.frombuffer(data2, dtype=dtype)
 
     offset1 = int(1.0 * framerate) * nchannels
-    offset2 = int(7.5 * framerate) * nchannels
+    # タイトル出現(3s) + タイトルホールド(title_hold) + 黒転(2s) + 暗転ポーズ(0.5s) + クレジット出現遅延(0.5s)
+    offset2_sec = 3.0 + title_hold + 2.0 + 0.5 + 0.5
+    offset2 = int(offset2_sec * framerate) * nchannels
 
     opening_audio[offset1 : offset1 + len(arr1)] = arr1[:len(opening_audio) - offset1]
     opening_audio[offset2 : offset2 + len(arr2)] = arr2[:len(opening_audio) - offset2]
@@ -393,9 +412,18 @@ def create_full_audio(title_wav, credit_wav, body_wav, output_wav, opening_durat
     with wave.open(output_wav, "wb") as dst:
         dst.setparams(params)
         dst.writeframes(opening_bytes)
-        
+
         if has_section and section_wav:
             with wave.open(section_wav, "rb") as ws:
+                sec_params = ws.getparams()
+                if (sec_params.framerate != framerate or 
+                    sec_params.nchannels != nchannels or 
+                    sec_params.sampwidth != sampwidth):
+                    raise ValueError(
+                        f"セクション音声(003)のフォーマットがタイトル音声と一致しません。\n"
+                        f"タイトル: {framerate}Hz, {nchannels}ch, {sampwidth}bytes\n"
+                        f"セクション: {sec_params.framerate}Hz, {sec_params.nchannels}ch, {sec_params.sampwidth}bytes"
+                    )
                 sec_data = ws.readframes(ws.getnframes())
             sec_samples = int(section_video_duration * framerate)
             sec_audio = np.zeros(sec_samples * nchannels, dtype=dtype)
@@ -403,7 +431,7 @@ def create_full_audio(title_wav, credit_wav, body_wav, output_wav, opening_durat
             sec_offset = int(0.5 * framerate) * nchannels
             sec_audio[sec_offset : sec_offset + len(sec_arr)] = sec_arr[:len(sec_audio) - sec_offset]
             dst.writeframes(sec_audio.tobytes())
-            
+
         dst.writeframes(body_data)
 
 def mux_audio(video_no_audio, audio_wav, output_mp4):
@@ -425,7 +453,7 @@ def mux_audio_with_ambient(video_no_audio, audio_wav, bgm_list, output_mp4, open
     bgm_list: [{'file_name': str, 'start': int, 'end': int, 'volume': float, 'in_bgm_folder': bool}]
     """
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-    
+
     valid_bgm_inputs = []
     for item in bgm_list:
         bgm_file = item['file_name']
@@ -441,11 +469,11 @@ def mux_audio_with_ambient(video_no_audio, audio_wav, bgm_list, output_mp4, open
                 if os.path.exists(check):
                     p = check
                     break
-        
+
         if p and os.path.exists(p):
             start_idx = item['start']
             end_idx = item['end']
-            
+
             # 開始時間の決定
             if start_idx == "title":
                 abs_start = 0.0
@@ -460,7 +488,7 @@ def mux_audio_with_ambient(video_no_audio, audio_wav, bgm_list, output_mp4, open
                 if start_t is None:
                     start_t = timeline[0]['start']
                 abs_start = opening_duration + start_t
-            
+
             # 終了時間の決定
             is_end_margin = False
             if end_idx == "title":
@@ -477,7 +505,7 @@ def mux_audio_with_ambient(video_no_audio, audio_wav, bgm_list, output_mp4, open
                 if end_t is None:
                     end_t = timeline[-1]['end']
                 abs_end = opening_duration + end_t
-            
+
             valid_bgm_inputs.append({
                 'path': p,
                 'abs_start': abs_start,
@@ -485,29 +513,29 @@ def mux_audio_with_ambient(video_no_audio, audio_wav, bgm_list, output_mp4, open
                 'volume': item['volume'],
                 'is_end_margin': is_end_margin
             })
-            
+
     if valid_bgm_inputs:
         cmd = [ffmpeg, "-y", "-i", video_no_audio, "-i", audio_wav]
         for bgm in valid_bgm_inputs:
             cmd.extend(["-i", bgm['path']])
-            
+
         filter_parts = []
         filter_parts.append("[1:a]volume=1.0[a1]")
         amix_inputs = ["[a1]"]
-        
+
         for idx, bgm in enumerate(valid_bgm_inputs):
             in_label = f"[{idx + 2}:a]"
             out_label = f"[bgm{idx}]"
-            
+
             duration = bgm['abs_end'] - bgm['abs_start']
             delay_ms = int(bgm['abs_start'] * 1000)
-            
+
             # フェードアウト時間（最後の余韻指定の場合は5.0秒、それ以外は最後の2秒、またはBGMの長さが短い場合はその半分）
             if bgm.get('is_end_margin', False):
                 fade_len = 5.0
             else:
                 fade_len = min(2.0, duration / 2.0)
-            
+
             filter_parts.append(
                 f"{in_label}atrim=0:{duration:.2f},"
                 f"afade=t=out:st={duration - fade_len:.2f}:d={fade_len:.2f},"
@@ -515,12 +543,12 @@ def mux_audio_with_ambient(video_no_audio, audio_wav, bgm_list, output_mp4, open
                 f"volume={bgm['volume']:.4f}{out_label}"
             )
             amix_inputs.append(out_label)
-            
+
         mix_inputs_str = "".join(amix_inputs)
         filter_parts.append(f"{mix_inputs_str}amix=inputs={len(amix_inputs)}:duration=first:dropout_transition=2[a]")
-        
+
         filter_complex = "; ".join(filter_parts)
-        
+
         cmd.extend([
             "-filter_complex", filter_complex,
             "-map", "0:v",
@@ -541,13 +569,13 @@ def mux_audio_with_ambient(video_no_audio, audio_wav, bgm_list, output_mp4, open
             "-shortest",
             output_mp4
         ]
-        
+
     subprocess.run(cmd, check=True)
 
 # =========================
 # 動画生成メインエンジン
 # =========================
-def run_generation(work_dir, title_text, credit_text, default_interval, intervals_dict, bg_ranges, bgm_settings, has_section=False, section_text="", log_callback=print):
+def run_generation(work_dir, title_text, credit_text, default_interval, intervals_dict, bg_ranges, bgm_settings, has_section=False, section_text="", title_hold=1.5, credit_hold=2.0, section_hold=0.0, log_callback=print):
     """
     work_dir: 作品フォルダの絶対パス
     title_text: タイトルテキスト
@@ -558,23 +586,19 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
     bgm_settings: BGM設定 {'enabled': True, 'volume': 0.12}
     """
     log_callback("動画生成タスクを開始します...")
-    
+
     # フォルダ存在確認
     voice_dir = os.path.join(work_dir, "音声ファイル")
     bg_dir = os.path.join(work_dir, "背景画像")
     subtitle_json_path = os.path.join(work_dir, "字幕.json")
-    
+
     if not (os.path.exists(voice_dir) and os.path.exists(bg_dir) and os.path.exists(subtitle_json_path)):
         raise FileNotFoundError("作品フォルダの構成（音声ファイル, 背景画像, 字幕.json）が正しくありません。")
-        
+
     font_path = find_font()
     log_callback(f"フォントを使用します: {font_path}")
 
     # 出力ファイル定義
-    temp_title_no_audio = os.path.join(work_dir, "temp_title_no_audio.mp4")
-    temp_title_audio = os.path.join(work_dir, "temp_title_audio.wav")
-    temp_title_final = os.path.join(work_dir, "gekka_title_to_credit.mp4")
-    
     temp_body_audio = os.path.join(work_dir, "temp_body_audio.wav")
     temp_final_no_audio = os.path.join(work_dir, "temp_final_no_audio.mp4")
     temp_padded_audio = os.path.join(work_dir, "temp_padded_audio.wav")
@@ -583,7 +607,7 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
     # 音声ファイルの整理
     title_wav = os.path.join(voice_dir, "001_暁記ミタマ（ノーマル）_げっか。.wav")
     credit_wav = os.path.join(voice_dir, "002_暁記ミタマ（ノーマル）_作、白蛇。.wav")
-    
+
     # ファイル名が異なる場合があるので、001と002で始まるファイルをスキャン
     for filename in os.listdir(voice_dir):
         if filename.endswith(".wav"):
@@ -599,18 +623,18 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
     with open(subtitle_json_path, "r", encoding="utf-8") as f:
         subtitles_data = json.load(f)
 
-    # 1. タイトル＆作者動画の生成
-    log_callback("【1/4】タイトル動画のフレームをレンダリング中...")
+    # 1. タイトル＆作者動画の生成 (直接最終動画用の writer に書き込み開始)
+    log_callback("【1/4】タイトル＆クレジット映像を生成中...")
     title_font = ImageFont.truetype(font_path, TITLE_FONT_SIZE)
     credit_font = ImageFont.truetype(font_path, CREDIT_FONT_SIZE)
-    
+
     title_layer = create_text_layer(title_text, title_font, TITLE_COLOR, y_offset=0)
     title_alpha = title_layer.split()[-1]
     credit_layer = create_text_layer(credit_text, credit_font, CREDIT_COLOR, y_offset=40)
     credit_alpha = credit_layer.split()[-1]
 
-    writer = imageio.get_writer(temp_title_no_audio, fps=FPS, codec="libx264", quality=8, macro_block_size=16)
-    
+    writer = imageio.get_writer(temp_final_no_audio, fps=FPS, codec="libx264", quality=8, macro_block_size=16)
+
     def append_title_frames(w, duration, frame_func):
         cnt = int(FPS * duration)
         for i in range(cnt):
@@ -624,41 +648,26 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
         for _ in range(cnt):
             w.append_data(arr)
 
-    try:
-        append_title_frames(writer, TITLE_APPEAR_DURATION, lambda t: frame_title_appear(t, title_alpha))
-        append_title_hold(writer, TITLE_HOLD_DURATION, frame_title_appear(1.0, title_alpha))
-        append_title_frames(writer, BLACKEN_DURATION, lambda t: frame_title_blacken(t, title_alpha))
-        append_title_hold(writer, DARK_PAUSE_DURATION, frame_dark_pause())
-        append_title_frames(writer, CREDIT_APPEAR_DURATION, lambda t: frame_credit_appear(t, credit_alpha))
-        append_title_hold(writer, CREDIT_HOLD_DURATION, frame_credit_appear(1.0, credit_alpha))
-        append_title_frames(writer, CREDIT_FADE_DURATION, lambda t: frame_credit_fade(t, credit_alpha))
-        append_title_hold(writer, FINAL_BLACK_DURATION, frame_final_black())
-    finally:
-        writer.close()
+    append_title_frames(writer, TITLE_APPEAR_DURATION, lambda t: frame_title_appear(t, title_alpha))
+    append_title_hold(writer, title_hold, frame_title_appear(1.0, title_alpha))
+    append_title_frames(writer, BLACKEN_DURATION, lambda t: frame_title_blacken(t, title_alpha))
+    append_title_hold(writer, DARK_PAUSE_DURATION, frame_dark_pause())
+    append_title_frames(writer, CREDIT_APPEAR_DURATION, lambda t: frame_credit_appear(t, credit_alpha))
+    append_title_hold(writer, credit_hold, frame_credit_appear(1.0, credit_alpha))
+    append_title_frames(writer, CREDIT_FADE_DURATION, lambda t: frame_credit_fade(t, credit_alpha))
+    append_title_hold(writer, FINAL_BLACK_DURATION, frame_final_black())
 
     title_duration = (
-        TITLE_APPEAR_DURATION + TITLE_HOLD_DURATION + BLACKEN_DURATION + DARK_PAUSE_DURATION +
-        CREDIT_APPEAR_DURATION + CREDIT_HOLD_DURATION + CREDIT_FADE_DURATION + FINAL_BLACK_DURATION
+        TITLE_APPEAR_DURATION + title_hold + BLACKEN_DURATION + DARK_PAUSE_DURATION +
+        CREDIT_APPEAR_DURATION + credit_hold + CREDIT_FADE_DURATION + FINAL_BLACK_DURATION
     )
-    
-    log_callback("タイトル音声を合成中...")
-    mix_title_audio(title_wav, credit_wav, temp_title_audio, title_duration)
-    
-    log_callback("タイトル映像と音声をマージ中...")
-    mux_audio(temp_title_no_audio, temp_title_audio, temp_title_final)
 
-    # クリーンアップ
-    for f in [temp_title_no_audio, temp_title_audio]:
-        if os.path.exists(f):
-            os.remove(f)
-
-    # 1.5. セクション動画の生成 (has_section=Trueの場合のみ)
-    temp_section_final = os.path.join(work_dir, "temp_section_final.mp4")
+    # 1.5. セクション映像の追記 (has_section=Trueの場合のみ、ライターに直接追記)
     section_wav = None
     section_video_duration = 0.0
 
     if has_section:
-        log_callback("【1.5】セクション動画のフレームをレンダリング中...")
+        log_callback("【1.5】セクション映像を生成中...")
         for filename in os.listdir(voice_dir):
             if filename.endswith(".wav") and filename.startswith("003"):
                 section_wav = os.path.join(voice_dir, filename)
@@ -684,48 +693,19 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
         section_layer = create_text_layer(sec_display_text, section_font, CREDIT_COLOR, y_offset=0)
         section_alpha = section_layer.split()[-1]
 
-        temp_section_no_audio = os.path.join(work_dir, "temp_section_no_audio.mp4")
-        temp_section_audio = os.path.join(work_dir, "temp_section_audio.wav")
-
         sec_op_duration = 0.5
         sec_ed_duration = 1.0
-        section_video_duration = sec_op_duration + sec_duration + sec_ed_duration
+        actual_section_hold = max(sec_duration, section_hold)
+        
+        fade_in_d = SECTION_APPEAR_DURATION
+        fade_out_d = SECTION_FADE_DURATION
+        hold_d = actual_section_hold
+        
+        section_video_duration = fade_in_d + hold_d + fade_out_d
 
-        fade_in_d = min(1.0, section_video_duration * 0.3)
-        fade_out_d = min(1.0, section_video_duration * 0.3)
-        hold_d = section_video_duration - fade_in_d - fade_out_d
-
-        writer_sec = imageio.get_writer(temp_section_no_audio, fps=FPS, codec="libx264", quality=8, macro_block_size=16)
-        try:
-            append_title_frames(writer_sec, fade_in_d, lambda t: frame_section_appear(t, section_alpha))
-            append_title_hold(writer_sec, hold_d, frame_section_appear(1.0, section_alpha))
-            append_title_frames(writer_sec, fade_out_d, lambda t: frame_section_fade(t, section_alpha))
-        finally:
-            writer_sec.close()
-
-        sec_framerate = sec_params.framerate
-        sec_nchannels = sec_params.nchannels
-        sec_sampwidth = sec_params.sampwidth
-        sec_dtype = np.int16 if sec_sampwidth == 2 else np.uint8
-
-        total_sec_samples = int(section_video_duration * sec_framerate)
-        sec_mixed = np.zeros(total_sec_samples * sec_nchannels, dtype=sec_dtype)
-        sec_arr = np.frombuffer(sec_data, dtype=sec_dtype)
-        sec_offset = int(sec_op_duration * sec_framerate) * sec_nchannels
-
-        sec_mixed[sec_offset : sec_offset + len(sec_arr)] = sec_arr[:len(sec_mixed) - sec_offset]
-
-        with wave.open(temp_section_audio, "wb") as out_sec:
-            out_sec.setnchannels(sec_nchannels)
-            out_sec.setsampwidth(sec_sampwidth)
-            out_sec.setframerate(sec_framerate)
-            out_sec.writeframes(sec_mixed.tobytes())
-
-        mux_audio(temp_section_no_audio, temp_section_audio, temp_section_final)
-
-        for f in [temp_section_no_audio, temp_section_audio]:
-            if os.path.exists(f):
-                os.remove(f)
+        append_title_frames(writer, fade_in_d, lambda t: frame_section_appear(t, section_alpha))
+        append_title_hold(writer, hold_d, frame_section_appear(1.0, section_alpha))
+        append_title_frames(writer, fade_out_d, lambda t: frame_section_fade(t, section_alpha))
 
     # 2. 本文用音声の連結
     log_callback("【2/4】本文音声ファイルを連結中...")
@@ -768,7 +748,7 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
             })
             audio_segments.append(data)
             current_time += duration
-            
+
             # 再生間隔（無音）の挿入
             if idx < len(sorted_keys) - 1:
                 interval = intervals_dict.get(key, default_interval)
@@ -795,7 +775,7 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
 
     # 3. 本文映像フレームのレンダリング
     log_callback("【3/4】本文映像のレンダリングを開始します...")
-    
+
     # 背景画像のロードとキャッシュ
     bg_cache = {}
     for r in bg_ranges:
@@ -817,7 +797,7 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
                 break
         if not active_item and timeline:
             active_item = timeline[0]
-            
+
         if active_item:
             idx = active_item["index"]
             # bg_rangesから合致するものを探索
@@ -867,10 +847,10 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
     def render_bg_frame(t):
         bg_name = get_bg_image_name(t)
         bg = bg_cache[bg_name]
-        
+
         prev_name = get_prev_bg_image_name(t)
         change_time = get_bg_change_time(t)
-        
+
         if prev_name and prev_name in bg_cache:
             dt = t - change_time
             if 0 <= dt < BG_FADE_DURATION:
@@ -878,9 +858,9 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
                 ratio = 0.5 - 0.5 * math.cos(math.pi * ratio)
                 prev = bg_cache[prev_name]
                 bg = Image.blend(prev, bg, ratio)
-                
+
         darkened = darken_background(bg)
-        
+
         # 最終暗転
         last_audio_end = timeline[-1]["end"]
         if t >= last_audio_end:
@@ -890,63 +870,41 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
             ratio = 0.5 - 0.5 * math.cos(math.pi * ratio)
             black_veil = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, int(255 * ratio)))
             darkened = Image.alpha_composite(darkened, black_veil)
-            
+
         return darkened
 
-    # ビデオライター
-    writer = imageio.get_writer(temp_final_no_audio, fps=FPS, codec="libx264", quality=8, macro_block_size=16)
+    # オープニングとセクションはすでに直接ライターに書き込まれているため結合は不要。
+    # 厳密な秒数計算により opening_duration を求める。
+    title_credit_duration = 9.5 + title_hold + credit_hold
+    opening_duration = title_credit_duration
+    if has_section:
+        opening_duration += section_video_duration
+    
+    log_callback(f"オープニング・セクション映像の生成完了。累計オープニング秒数: {opening_duration:.2f} 秒")
+    
     subtitle_font = ImageFont.truetype(font_path, SUBTITLE_FONT_SIZE)
 
     try:
-        # 1. オープニング動画の結合
-        reader = imageio.get_reader(temp_title_final)
-        meta = reader.get_meta_data()
-        op_fps = meta.get("fps", FPS)
-        op_frames = 0
-        for frame in reader:
-            img = Image.fromarray(frame).convert("RGB")
-            img = fit_cover(img, WIDTH, HEIGHT).convert("RGB")
-            writer.append_data(np.array(img))
-            op_frames += 1
-        reader.close()
-        opening_duration = op_frames / float(op_fps)
-        log_callback(f"オープニング動画の結合完了。秒数: {opening_duration:.2f} 秒")
-
-        if has_section:
-            # セクション動画の結合
-            reader_sec = imageio.get_reader(temp_section_final)
-            sec_meta = reader_sec.get_meta_data()
-            sec_fps = sec_meta.get("fps", FPS)
-            sec_frames = 0
-            for frame in reader_sec:
-                img = Image.fromarray(frame).convert("RGB")
-                img = fit_cover(img, WIDTH, HEIGHT).convert("RGB")
-                writer.append_data(np.array(img))
-                sec_frames += 1
-            reader_sec.close()
-            opening_duration += sec_frames / float(sec_fps)
-            log_callback(f"セクション動画の結合完了。累計オープニング秒数: {opening_duration:.2f} 秒")
-
-        # 2. 本文フレーム描画
+        # 2. 本文フレーム描画 (ライターに直接追記)
         frame_count = int(voice_duration * FPS)
         for f_idx in range(frame_count):
             t = f_idx / FPS
             frame = render_bg_frame(t)
-            
+
             # 字幕 (音声再生中のみ)
             active_item = None
             for item in timeline:
                 if item["start"] <= t < item["end"]:
                     active_item = item
                     break
-            
+
             if active_item:
                 str_key = f"{active_item['index']:03d}"
                 text = subtitles_data.get(str_key, "")
                 frame = draw_subtitle(frame, text, subtitle_font)
-                
+
             writer.append_data(np.array(frame.convert("RGB")))
-            
+
             if (f_idx + 1) % (frame_count // 10 or 1) == 0:
                 percent = int((f_idx + 1) / frame_count * 100)
                 log_callback(f"映像レンダリング中... {percent}%")
@@ -963,9 +921,11 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
         opening_duration=opening_duration,
         has_section=has_section,
         section_wav=section_wav,
-        section_video_duration=section_video_duration
+        section_video_duration=section_video_duration,
+        title_hold=title_hold,
+        credit_hold=credit_hold
     )
-    
+
     mux_audio_with_ambient(
         video_no_audio=temp_final_no_audio,
         audio_wav=temp_padded_audio,
@@ -981,11 +941,9 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
     # 一時ファイルの削除
     log_callback("一時ファイルを削除中...")
     temp_files = [temp_body_audio, temp_final_no_audio, temp_padded_audio]
-    if has_section:
-        temp_files.append(temp_section_final)
     for f in temp_files:
         if os.path.exists(f):
             os.remove(f)
-            
+
     log_callback(f"動画生成完了！出力先: {output_mp4}")
     return output_mp4
