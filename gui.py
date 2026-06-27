@@ -23,6 +23,8 @@ class ReadingVideoApp(tk.Tk):
         self.title_text = tk.StringVar(value="")
         self.credit_text = tk.StringVar(value="")
         self.default_interval = tk.DoubleVar(value=0.5)
+        self.has_section = tk.BooleanVar(value=False)
+        self.section_text = tk.StringVar(value="")
         
         # フォールバック用BGM変数
         self.bgm_enabled = tk.BooleanVar(value=True)
@@ -51,6 +53,9 @@ class ReadingVideoApp(tk.Tk):
         
         # レイアウト構築
         self.build_ui()
+        
+        # セクション入力欄の状態を初期設定
+        self.update_section_entry_state()
         
         # ログ監視タイマー開始
         self.after(100, self.poll_log_queue)
@@ -134,6 +139,13 @@ class ReadingVideoApp(tk.Tk):
         
         ttk.Label(text_frame, text="デフォルト音声間隔(秒):").pack(side=tk.LEFT)
         ttk.Entry(text_frame, textvariable=self.default_interval, width=8).pack(side=tk.LEFT)
+
+        ttk.Checkbutton(text_frame, text="セクションあり (003)", variable=self.has_section, command=self.on_section_toggle).pack(side=tk.LEFT, padx=(20, 0))
+        
+        self.section_lbl = ttk.Label(text_frame, text="セクション名:")
+        self.section_lbl.pack(side=tk.LEFT, padx=(10, 0))
+        self.section_ent = ttk.Entry(text_frame, textvariable=self.section_text, width=15)
+        self.section_ent.pack(side=tk.LEFT)
 
         # 下部：実行ログと生成ボタン（確実に表示されるよう先にBOTTOMへ配置）
         bottom_frame = ttk.Frame(main_container)
@@ -238,6 +250,37 @@ class ReadingVideoApp(tk.Tk):
         
 
 
+    def on_section_toggle(self):
+        self.update_section_entry_state()
+        path = self.work_dir.get().strip()
+        if path and os.path.exists(path):
+            voice_dir = os.path.join(path, "音声ファイル")
+            if os.path.exists(voice_dir):
+                self.voice_list = []
+                start_idx = 4 if self.has_section.get() else 3
+                for filename in os.listdir(voice_dir):
+                    if filename.endswith(".wav"):
+                        prefix = filename[:3]
+                        if prefix.isdigit() and int(prefix) >= start_idx:
+                            self.voice_list.append(int(prefix))
+                self.voice_list.sort()
+                
+                # UIの更新
+                self.update_voice_list_ui()
+                self.update_bg_ranges_ui()
+                self.update_bgm_ui()
+                
+                # 再帰的にホイールバインドを設定
+                self.bind_mousewheel_recursive(self.scrollable_frame, self.on_list_mousewheel)
+                self.bind_mousewheel_recursive(self.bg_scrollable_frame, self.on_bg_mousewheel)
+                self.bind_mousewheel_recursive(self.bgm_scrollable_frame, self.on_bgm_mousewheel)
+
+    def update_section_entry_state(self):
+        if self.has_section.get():
+            self.section_ent.configure(state=tk.NORMAL)
+        else:
+            self.section_ent.configure(state=tk.DISABLED)
+
     def browse_folder(self):
         initial_dir = r"D:\Games\Python\朗読動画"
         if not os.path.exists(initial_dir):
@@ -261,8 +304,21 @@ class ReadingVideoApp(tk.Tk):
         self.title_text.set("")
         self.credit_text.set("")
         self.default_interval.set(0.5)
+        self.has_section.set(False)
+        self.section_text.set("")
             
         self.log_write(f"プロジェクト「{os.path.basename(path)}」を読み込みました。")
+        
+        # 先に設定ファイルの has_section の状態を読み込んでおく（音声ファイルのロード開始位置を決めるため）
+        config_path = os.path.join(path, "project_config.json")
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    tmp_config = json.load(f)
+                    if "has_section" in tmp_config:
+                        self.has_section.set(tmp_config["has_section"])
+            except Exception:
+                pass
         
         # 1. 字幕のロード
         try:
@@ -274,10 +330,11 @@ class ReadingVideoApp(tk.Tk):
             
         # 2. 音声ファイルのロード
         self.voice_list = []
+        start_idx = 4 if self.has_section.get() else 3
         for filename in os.listdir(voice_dir):
             if filename.endswith(".wav"):
                 prefix = filename[:3]
-                if prefix.isdigit() and int(prefix) >= 3:
+                if prefix.isdigit() and int(prefix) >= start_idx:
                     self.voice_list.append(int(prefix))
         self.voice_list.sort()
         
@@ -320,10 +377,15 @@ class ReadingVideoApp(tk.Tk):
                         self.default_interval.set(float(self.loaded_config["default_interval"]))
                     except (ValueError, tk.TclError):
                         pass
+                if "has_section" in self.loaded_config:
+                    self.has_section.set(self.loaded_config["has_section"])
+                if "section_text" in self.loaded_config:
+                    self.section_text.set(self.loaded_config["section_text"])
             except Exception as e:
                 self.log_write(f"設定データの読み込みに失敗しました: {e}")
                 
         # UIの更新
+        self.update_section_entry_state()
         self.update_voice_list_ui()
         self.update_bg_ranges_ui()
         self.update_bgm_ui()
@@ -710,6 +772,8 @@ class ReadingVideoApp(tk.Tk):
             'title_text': self.title_text.get(),
             'credit_text': self.credit_text.get(),
             'default_interval': self.default_interval.get(),
+            'has_section': self.has_section.get(),
+            'section_text': self.section_text.get(),
             'intervals': intervals,
             'bg_ranges': bg_ranges,
             'bgm_settings': bgm_settings
@@ -887,12 +951,12 @@ class ReadingVideoApp(tk.Tk):
         # 非同期スレッドで生成を開始
         t = threading.Thread(
             target=self.generation_thread_target,
-            args=(work_dir, self.title_text.get(), self.credit_text.get(), default_int, intervals, bg_ranges, bgm_settings)
+            args=(work_dir, self.title_text.get(), self.credit_text.get(), default_int, intervals, bg_ranges, bgm_settings, self.has_section.get(), self.section_text.get())
         )
         t.daemon = True
         t.start()
 
-    def generation_thread_target(self, work_dir, title_txt, credit_txt, def_int, intervals, bg_ranges, bgm_settings):
+    def generation_thread_target(self, work_dir, title_txt, credit_txt, def_int, intervals, bg_ranges, bgm_settings, has_section, section_txt):
         try:
             generator.run_generation(
                 work_dir=work_dir,
@@ -902,6 +966,8 @@ class ReadingVideoApp(tk.Tk):
                 intervals_dict=intervals,
                 bg_ranges=bg_ranges,
                 bgm_settings=bgm_settings,
+                has_section=has_section,
+                section_text=section_txt,
                 log_callback=self.log_write
             )
             self.log_write("\n動画生成が正常に完了しました！")

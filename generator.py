@@ -25,6 +25,7 @@ FINAL_BLACK_DURATION = 1
 
 TITLE_FONT_SIZE = 380
 CREDIT_FONT_SIZE = 120
+SECTION_FONT_SIZE = 180
 TITLE_COLOR = (232, 236, 246, 255)
 CREDIT_COLOR = (218, 224, 238, 255)
 TITLE_GLOW_COLOR = (150, 165, 210, 120)
@@ -217,6 +218,51 @@ def frame_credit_fade(t, credit_alpha):
     frame = Image.alpha_composite(frame, veil)
     return frame.convert("RGB")
 
+def frame_section_appear(t, section_alpha):
+    t = ease(t)
+    bg = make_background(strength=0.8)
+    blur_amount = int((1.0 - t) * 18)
+    alpha = fade_alpha(section_alpha, t)
+    text = apply_alpha_to_color(alpha, CREDIT_COLOR)
+    if blur_amount > 0:
+        text = text.filter(ImageFilter.GaussianBlur(blur_amount))
+    glow_alpha = alpha.filter(ImageFilter.GaussianBlur(18))
+    glow = apply_alpha_to_color(glow_alpha, CREDIT_GLOW_COLOR)
+    wide_glow_alpha = alpha.filter(ImageFilter.GaussianBlur(52))
+    wide_glow = apply_alpha_to_color(wide_glow_alpha, (70, 85, 135, 40))
+    sharp_strength = max(0.0, (t - 0.55) / 0.45)
+    sharp_alpha = fade_alpha(section_alpha, sharp_strength)
+    sharp = apply_alpha_to_color(sharp_alpha, CREDIT_COLOR)
+
+    frame = Image.alpha_composite(bg, wide_glow)
+    frame = Image.alpha_composite(frame, glow)
+    frame = Image.alpha_composite(frame, text)
+    frame = Image.alpha_composite(frame, sharp)
+    return frame.convert("RGB")
+
+def frame_section_fade(t, section_alpha):
+    t = ease(t)
+    bg = make_background(strength=0.6)
+    alpha_strength = max(0.0, 1.0 - t * 1.15)
+    blur_amount = int(2 + t * 28)
+    alpha = fade_alpha(section_alpha, alpha_strength)
+    text = apply_alpha_to_color(alpha, CREDIT_COLOR)
+    if blur_amount > 0:
+        text = text.filter(ImageFilter.GaussianBlur(blur_amount))
+    glow_alpha = alpha.filter(ImageFilter.GaussianBlur(18 + int(t * 14)))
+    glow = apply_alpha_to_color(glow_alpha, CREDIT_GLOW_COLOR)
+    wide_glow_alpha = alpha.filter(ImageFilter.GaussianBlur(52 + int(t * 22)))
+    wide_glow = apply_alpha_to_color(wide_glow_alpha, (70, 85, 135, 35))
+
+    veil_strength = max(0.0, (t - 0.35) / 0.65)
+    veil = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, int(255 * veil_strength)))
+
+    frame = Image.alpha_composite(bg, wide_glow)
+    frame = Image.alpha_composite(frame, glow)
+    frame = Image.alpha_composite(frame, text)
+    frame = Image.alpha_composite(frame, veil)
+    return frame.convert("RGB")
+
 def frame_final_black():
     return Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
 
@@ -313,7 +359,7 @@ def mix_title_audio(title_wav, credit_wav, output_wav, total_duration):
         out.setframerate(framerate)
         out.writeframes(mixed.tobytes())
 
-def create_full_audio(title_wav, credit_wav, body_wav, output_wav, opening_duration):
+def create_full_audio(title_wav, credit_wav, body_wav, output_wav, opening_duration, has_section=False, section_wav=None, section_video_duration=0.0):
     with wave.open(title_wav, "rb") as w1:
         params = w1.getparams()
         framerate = params.framerate
@@ -328,8 +374,10 @@ def create_full_audio(title_wav, credit_wav, body_wav, output_wav, opening_durat
         body_data = w_body.readframes(w_body.getnframes())
 
     dtype = np.int16 if sampwidth == 2 else np.uint8
-    opening_samples = int(opening_duration * framerate)
-    opening_audio = np.zeros(opening_samples * nchannels, dtype=dtype)
+    # タイトル＋クレジットの元のオープニング動画は13秒固定
+    title_credit_duration = 13.0
+    title_credit_samples = int(title_credit_duration * framerate)
+    opening_audio = np.zeros(title_credit_samples * nchannels, dtype=dtype)
 
     arr1 = np.frombuffer(data1, dtype=dtype)
     arr2 = np.frombuffer(data2, dtype=dtype)
@@ -345,6 +393,17 @@ def create_full_audio(title_wav, credit_wav, body_wav, output_wav, opening_durat
     with wave.open(output_wav, "wb") as dst:
         dst.setparams(params)
         dst.writeframes(opening_bytes)
+        
+        if has_section and section_wav:
+            with wave.open(section_wav, "rb") as ws:
+                sec_data = ws.readframes(ws.getnframes())
+            sec_samples = int(section_video_duration * framerate)
+            sec_audio = np.zeros(sec_samples * nchannels, dtype=dtype)
+            sec_arr = np.frombuffer(sec_data, dtype=dtype)
+            sec_offset = int(0.5 * framerate) * nchannels
+            sec_audio[sec_offset : sec_offset + len(sec_arr)] = sec_arr[:len(sec_audio) - sec_offset]
+            dst.writeframes(sec_audio.tobytes())
+            
         dst.writeframes(body_data)
 
 def mux_audio(video_no_audio, audio_wav, output_mp4):
@@ -488,7 +547,7 @@ def mux_audio_with_ambient(video_no_audio, audio_wav, bgm_list, output_mp4, open
 # =========================
 # 動画生成メインエンジン
 # =========================
-def run_generation(work_dir, title_text, credit_text, default_interval, intervals_dict, bg_ranges, bgm_settings, log_callback=print):
+def run_generation(work_dir, title_text, credit_text, default_interval, intervals_dict, bg_ranges, bgm_settings, has_section=False, section_text="", log_callback=print):
     """
     work_dir: 作品フォルダの絶対パス
     title_text: タイトルテキスト
@@ -535,6 +594,10 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
 
     if not (os.path.exists(title_wav) and os.path.exists(credit_wav)):
         raise FileNotFoundError("タイトル音声(001)、または作者音声(002)が見つかりません。")
+
+    # 字幕.jsonの先行ロード
+    with open(subtitle_json_path, "r", encoding="utf-8") as f:
+        subtitles_data = json.load(f)
 
     # 1. タイトル＆作者動画の生成
     log_callback("【1/4】タイトル動画のフレームをレンダリング中...")
@@ -589,25 +652,100 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
         if os.path.exists(f):
             os.remove(f)
 
+    # 1.5. セクション動画の生成 (has_section=Trueの場合のみ)
+    temp_section_final = os.path.join(work_dir, "temp_section_final.mp4")
+    section_wav = None
+    section_video_duration = 0.0
+
+    if has_section:
+        log_callback("【1.5】セクション動画のフレームをレンダリング中...")
+        for filename in os.listdir(voice_dir):
+            if filename.endswith(".wav") and filename.startswith("003"):
+                section_wav = os.path.join(voice_dir, filename)
+                break
+        if not section_wav:
+            raise FileNotFoundError("セクション音声(003)が見つかりません。")
+
+        with wave.open(section_wav, "rb") as wf:
+            sec_params = wf.getparams()
+            sec_duration = wf.getnframes() / float(wf.getframerate())
+            sec_data = wf.readframes(wf.getnframes())
+
+        # 字幕データからテキスト取得 (引数 section_text が空の場合のみフォールバック)
+        sec_display_text = section_text.strip()
+        if not sec_display_text:
+            sec_display_text = subtitles_data.get("003", "")
+        if not sec_display_text:
+            base = os.path.splitext(os.path.basename(section_wav))[0]
+            parts = base.split("_", 1)
+            sec_display_text = parts[1] if len(parts) > 1 else parts[0]
+
+        section_font = ImageFont.truetype(font_path, SECTION_FONT_SIZE)
+        section_layer = create_text_layer(sec_display_text, section_font, CREDIT_COLOR, y_offset=0)
+        section_alpha = section_layer.split()[-1]
+
+        temp_section_no_audio = os.path.join(work_dir, "temp_section_no_audio.mp4")
+        temp_section_audio = os.path.join(work_dir, "temp_section_audio.wav")
+
+        sec_op_duration = 0.5
+        sec_ed_duration = 1.0
+        section_video_duration = sec_op_duration + sec_duration + sec_ed_duration
+
+        fade_in_d = min(1.0, section_video_duration * 0.3)
+        fade_out_d = min(1.0, section_video_duration * 0.3)
+        hold_d = section_video_duration - fade_in_d - fade_out_d
+
+        writer_sec = imageio.get_writer(temp_section_no_audio, fps=FPS, codec="libx264", quality=8, macro_block_size=16)
+        try:
+            append_title_frames(writer_sec, fade_in_d, lambda t: frame_section_appear(t, section_alpha))
+            append_title_hold(writer_sec, hold_d, frame_section_appear(1.0, section_alpha))
+            append_title_frames(writer_sec, fade_out_d, lambda t: frame_section_fade(t, section_alpha))
+        finally:
+            writer_sec.close()
+
+        sec_framerate = sec_params.framerate
+        sec_nchannels = sec_params.nchannels
+        sec_sampwidth = sec_params.sampwidth
+        sec_dtype = np.int16 if sec_sampwidth == 2 else np.uint8
+
+        total_sec_samples = int(section_video_duration * sec_framerate)
+        sec_mixed = np.zeros(total_sec_samples * sec_nchannels, dtype=sec_dtype)
+        sec_arr = np.frombuffer(sec_data, dtype=sec_dtype)
+        sec_offset = int(sec_op_duration * sec_framerate) * sec_nchannels
+
+        sec_mixed[sec_offset : sec_offset + len(sec_arr)] = sec_arr[:len(sec_mixed) - sec_offset]
+
+        with wave.open(temp_section_audio, "wb") as out_sec:
+            out_sec.setnchannels(sec_nchannels)
+            out_sec.setsampwidth(sec_sampwidth)
+            out_sec.setframerate(sec_framerate)
+            out_sec.writeframes(sec_mixed.tobytes())
+
+        mux_audio(temp_section_no_audio, temp_section_audio, temp_section_final)
+
+        for f in [temp_section_no_audio, temp_section_audio]:
+            if os.path.exists(f):
+                os.remove(f)
+
     # 2. 本文用音声の連結
     log_callback("【2/4】本文音声ファイルを連結中...")
-    with open(subtitle_json_path, "r", encoding="utf-8") as f:
-        subtitles_data = json.load(f)
 
     wav_files = {}
+    start_idx = 4 if has_section else 3
     for filename in os.listdir(voice_dir):
         if filename.endswith(".wav"):
             prefix = filename[:3]
             if prefix.isdigit():
                 idx = int(prefix)
-                if idx >= 3:
+                if idx >= start_idx:
                     wav_files[idx] = os.path.join(voice_dir, filename)
 
     if not wav_files:
-        raise ValueError("本文音声ファイル（003〜）が見つかりません。")
+        raise ValueError(f"本文音声ファイル（{start_idx:03d}〜）が見つかりません。")
 
     sorted_keys = sorted(wav_files.keys())
     first_key = sorted_keys[0]
+
     with wave.open(wav_files[first_key], "rb") as wf:
         params = wf.getparams()
         nchannels = params.nchannels
@@ -774,6 +912,21 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
         opening_duration = op_frames / float(op_fps)
         log_callback(f"オープニング動画の結合完了。秒数: {opening_duration:.2f} 秒")
 
+        if has_section:
+            # セクション動画の結合
+            reader_sec = imageio.get_reader(temp_section_final)
+            sec_meta = reader_sec.get_meta_data()
+            sec_fps = sec_meta.get("fps", FPS)
+            sec_frames = 0
+            for frame in reader_sec:
+                img = Image.fromarray(frame).convert("RGB")
+                img = fit_cover(img, WIDTH, HEIGHT).convert("RGB")
+                writer.append_data(np.array(img))
+                sec_frames += 1
+            reader_sec.close()
+            opening_duration += sec_frames / float(sec_fps)
+            log_callback(f"セクション動画の結合完了。累計オープニング秒数: {opening_duration:.2f} 秒")
+
         # 2. 本文フレーム描画
         frame_count = int(voice_duration * FPS)
         for f_idx in range(frame_count):
@@ -802,7 +955,16 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
 
     # 4. 音声とBGMの結合
     log_callback("【4/4】最終音声ファイルの合成とマージ中...")
-    create_full_audio(title_wav, credit_wav, temp_body_audio, temp_padded_audio, opening_duration)
+    create_full_audio(
+        title_wav=title_wav,
+        credit_wav=credit_wav,
+        body_wav=temp_body_audio,
+        output_wav=temp_padded_audio,
+        opening_duration=opening_duration,
+        has_section=has_section,
+        section_wav=section_wav,
+        section_video_duration=section_video_duration
+    )
     
     mux_audio_with_ambient(
         video_no_audio=temp_final_no_audio,
@@ -818,7 +980,10 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
 
     # 一時ファイルの削除
     log_callback("一時ファイルを削除中...")
-    for f in [temp_body_audio, temp_final_no_audio, temp_padded_audio]:
+    temp_files = [temp_body_audio, temp_final_no_audio, temp_padded_audio]
+    if has_section:
+        temp_files.append(temp_section_final)
+    for f in temp_files:
         if os.path.exists(f):
             os.remove(f)
             
