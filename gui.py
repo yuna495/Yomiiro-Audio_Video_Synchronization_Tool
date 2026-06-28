@@ -5,6 +5,7 @@ import math
 import wave
 import threading
 import queue
+import re
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter import scrolledtext
@@ -48,7 +49,7 @@ class ReadingVideoApp(tk.Tk):
         
         # UI上のコンポーネント参照用
         self.interval_entries = {}  # {idx: Entry}
-        self.bg_range_combos = []   # [{'image_name': str, 'start_combo': Combobox, 'end_combo': Combobox}]
+        self.bg_range_controls = [] # [{'enabled_var': BooleanVar, 'image_combo': Combobox, 'start_combo': Combobox, 'end_combo': Combobox, 'frame': Frame}]
         self.bgm_range_controls = [] # [{'file_name': str, 'enabled_var': BooleanVar, 'start_combo': Combobox, ...}]
         
         # ログキューとスレッド管理
@@ -229,6 +230,11 @@ class ReadingVideoApp(tk.Tk):
         # 背景画像の設定エリア (スクロール化)
         self.bg_lf = ttk.LabelFrame(right_lf, text=" 背景画像適用範囲 ")
         self.bg_lf.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        
+        # 操作用上部ボタンエリア
+        bg_ctrl_frame = ttk.Frame(self.bg_lf, padding=2)
+        bg_ctrl_frame.pack(fill=tk.X, side=tk.TOP)
+        ttk.Button(bg_ctrl_frame, text="➕ 範囲を追加", command=self.add_new_bg_range).pack(side=tk.LEFT, padx=5, pady=2)
         
         self.bg_canvas = tk.Canvas(self.bg_lf, bg="#1e1e1e", highlightthickness=0)
         self.bg_scrollbar = ttk.Scrollbar(self.bg_lf, orient="vertical", command=self.bg_canvas.yview)
@@ -498,7 +504,7 @@ class ReadingVideoApp(tk.Tk):
             # 字幕プレビュー
             sub_text = self.subtitles.get(f"{idx:03d}", "")
             preview_text = sub_text[:25] + "..." if len(sub_text) > 25 else sub_text
-            preview_lbl = ttk.Label(row, text=preview_text, width=35, anchor=tk.W)
+            preview_lbl = ttk.Label(row, text=preview_text, width=35, anchor=tk.W, font=("Honoka Shin Mincho L", 10))
             preview_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
             preview_lbl.bind("<MouseWheel>", self.on_list_mousewheel)
             
@@ -507,11 +513,101 @@ class ReadingVideoApp(tk.Tk):
             ent.bind("<MouseWheel>", self.on_list_mousewheel)
             self.interval_entries[idx] = ent
 
+    def parse_range_from_filename(self, filename):
+        voice_opts = [f"{v:03d}" for v in self.voice_list]
+        name, ext = os.path.splitext(filename)
+        
+        # "none" または "none(X)" の場合は無効（チェックOFF）とする
+        if name.lower().startswith("none"):
+            return True, False, (voice_opts[0] if voice_opts else ""), (voice_opts[-1] if voice_opts else "")
+            
+        # 波ダッシュやチルダ、ハイフンで区切られた2つの数字を探す
+        match = re.search(r"(\d+)\s*[~〜-]\s*(\d+)", name)
+        if match:
+            start_val = f"{int(match.group(1)):03d}"
+            end_val = f"{int(match.group(2)):03d}"
+            if start_val in voice_opts and end_val in voice_opts:
+                return True, True, start_val, end_val
+                
+        # 単一の数字を探す
+        match_single = re.search(r"(\d+)", name)
+        if match_single:
+            val = f"{int(match_single.group(1)):03d}"
+            if val in voice_opts:
+                return True, True, val, val
+                
+        # 解析できない場合はデフォルトで最初〜最後に割り当て、パース成功フラグは False にする
+        return False, True, (voice_opts[0] if voice_opts else ""), (voice_opts[-1] if voice_opts else "")
+
+    def add_new_bg_range(self):
+        if not self.bg_images or not self.voice_list:
+            messagebox.showwarning("警告", "対象作品フォルダを読み込んでから追加してください。")
+            return
+        self.add_bg_range_row(enabled=True)
+
+    def add_bg_range_row(self, enabled=True, image_name=None, start_val=None, end_val=None):
+        row = ttk.Frame(self.bg_scrollable_frame, padding=4)
+        row.pack(fill=tk.X)
+        
+        # 有効化チェックボックス
+        enabled_var = tk.BooleanVar(value=enabled)
+        chk = ttk.Checkbutton(row, variable=enabled_var, width=2)
+        chk.pack(side=tk.LEFT)
+        
+        # 画像名選択 Combobox
+        image_combo = ttk.Combobox(row, values=self.bg_images, width=20, state="readonly")
+        image_combo.pack(side=tk.LEFT, padx=3)
+        if image_name and image_name in self.bg_images:
+            image_combo.set(image_name)
+        elif self.bg_images:
+            image_combo.set(self.bg_images[0])
+            
+        # 開始音声 Combobox
+        voice_opts = [f"{v:03d}" for v in self.voice_list]
+        start_combo = ttk.Combobox(row, values=voice_opts, width=8, state="readonly")
+        start_combo.pack(side=tk.LEFT, padx=3)
+        if start_val and start_val in voice_opts:
+            start_combo.set(start_val)
+        elif voice_opts:
+            start_combo.set(voice_opts[0])
+            
+        # 終了音声 Combobox
+        end_combo = ttk.Combobox(row, values=voice_opts, width=8, state="readonly")
+        end_combo.pack(side=tk.LEFT, padx=3)
+        if end_val and end_val in voice_opts:
+            end_combo.set(end_val)
+        elif voice_opts:
+            end_combo.set(voice_opts[-1])
+            
+        # 削除ボタン
+        del_btn = ttk.Button(row, text="❌", width=3)
+        del_btn.pack(side=tk.LEFT, padx=5)
+        
+        control_item = {
+            'enabled_var': enabled_var,
+            'image_combo': image_combo,
+            'start_combo': start_combo,
+            'end_combo': end_combo,
+            'frame': row
+        }
+        
+        del_btn.configure(command=lambda: self.remove_bg_range_row(control_item))
+        
+        self.bg_range_controls.append(control_item)
+        
+        # マウスホイールイベントのバインド
+        self.bind_mousewheel_recursive(row, self.on_bg_mousewheel)
+
+    def remove_bg_range_row(self, control_item):
+        control_item['frame'].destroy()
+        if control_item in self.bg_range_controls:
+            self.bg_range_controls.remove(control_item)
+
     def update_bg_ranges_ui(self):
         for child in self.bg_scrollable_frame.winfo_children():
             child.destroy()
             
-        self.bg_range_combos = []
+        self.bg_range_controls = []
         
         if not self.bg_images or not self.voice_list:
             self.bg_placeholder = ttk.Label(self.bg_scrollable_frame, text="背景画像がここにリストアップされます。", foreground="#808080")
@@ -524,71 +620,115 @@ class ReadingVideoApp(tk.Tk):
         # ヘッダー
         header_f = ttk.Frame(self.bg_scrollable_frame, padding=5)
         header_f.pack(fill=tk.X, pady=2)
-        ttk.Label(header_f, text="背景画像ファイル名", font=("Yu Gothic", 9, "bold"), width=25).pack(side=tk.LEFT)
+        ttk.Label(header_f, text="画像ファイル名", font=("Yu Gothic", 9, "bold"), width=20).pack(side=tk.LEFT, padx=(25, 0)) # チェックボックス分ずらす
         ttk.Label(header_f, text="開始音声", font=("Yu Gothic", 9, "bold"), width=10).pack(side=tk.LEFT, padx=5)
         ttk.Label(header_f, text="終了音声", font=("Yu Gothic", 9, "bold"), width=10).pack(side=tk.LEFT, padx=5)
         
-        # 均等分割のデフォルト範囲計算
-        n_images = len(self.bg_images)
-        n_voices = len(self.voice_list)
-        chunk_size = math.ceil(n_voices / n_images) if n_images > 0 else 1
+        # 保存データがあればそれから復元
+        bg_ranges_to_show = []
+        loaded_image_names = set()
+        if self.loaded_config and "bg_ranges" in self.loaded_config:
+            bg_ranges_data = self.loaded_config["bg_ranges"]
+            if isinstance(bg_ranges_data, list) and len(bg_ranges_data) > 0:
+                for bg_item in bg_ranges_data:
+                    img_name = bg_item.get("image_name")
+                    if img_name in self.bg_images:
+                        # ファイル名から優先パースを試みる
+                        success, enabled_parsed, s_parsed, e_parsed = self.parse_range_from_filename(img_name)
+                        if success:
+                            bg_item["start"] = s_parsed
+                            bg_item["end"] = e_parsed
+                            if "enabled" not in bg_item:
+                                bg_item["enabled"] = enabled_parsed
+                                
+                        bg_ranges_to_show.append(bg_item)
+                        loaded_image_names.add(img_name)
         
-        for idx, img_name in enumerate(self.bg_images):
-            row = ttk.Frame(self.bg_scrollable_frame, padding=4)
-            row.pack(fill=tk.X)
+        if self.loaded_config and "bg_ranges" in self.loaded_config and len(bg_ranges_to_show) > 0:
+            # 設定に存在しない新しい画像ファイルを読み込んで追加
+            for img_name in self.bg_images:
+                if img_name not in loaded_image_names:
+                    parsed, enabled, start_val, end_val = self.parse_range_from_filename(img_name)
+                    bg_ranges_to_show.append({
+                        "image_name": img_name,
+                        "start": start_val,
+                        "end": end_val,
+                        "enabled": enabled
+                    })
+        else:
+            # 設定データがない、または設定が空の場合
+            # すべての画像についてパースを試みる
+            parsed_items = []
+            any_success = False
+            for img_name in self.bg_images:
+                success, enabled, start_val, end_val = self.parse_range_from_filename(img_name)
+                if success:
+                    any_success = True
+                parsed_items.append({
+                    "image_name": img_name,
+                    "start": start_val,
+                    "end": end_val,
+                    "enabled": enabled
+                })
             
-            # 画像名
-            ttk.Label(row, text=img_name, width=25, anchor=tk.W).pack(side=tk.LEFT)
-            
-            # 開始コンボ
-            start_combo = ttk.Combobox(row, values=voice_opts, width=8, state="readonly")
-            start_combo.pack(side=tk.LEFT, padx=5)
-            
-            # 終了コンボ
-            end_combo = ttk.Combobox(row, values=voice_opts, width=8, state="readonly")
-            end_combo.pack(side=tk.LEFT, padx=5)
-            
-            # デフォルトの適用範囲を自動選択
-            def_start_idx = min(idx * chunk_size, n_voices - 1)
-            def_end_idx = min((idx + 1) * chunk_size - 1, n_voices - 1)
-            
-            # フェイルセーフ：開始が終了より大きくならないように調整
-            if def_start_idx > def_end_idx:
-                def_start_idx = def_end_idx
+            if any_success:
+                # 1つでもパースに成功した画像があれば、パース結果を採用
+                bg_ranges_to_show.extend(parsed_items)
+            else:
+                # すべての画像でパース失敗した場合は均等分割のデフォルト範囲計算
+                n_images = len(self.bg_images)
+                n_voices = len(self.voice_list)
+                chunk_size = math.ceil(n_voices / n_images) if n_images > 0 else 1
                 
-            start_val = voice_opts[def_start_idx]
-            end_val = voice_opts[def_end_idx]
-
-            # 保存データがあれば上書き復元
-            if self.loaded_config and "bg_ranges" in self.loaded_config:
-                for bg_item in self.loaded_config["bg_ranges"]:
-                    if bg_item.get("image_name") == img_name:
-                        s_val = bg_item.get("start")
-                        e_val = bg_item.get("end")
-                        if isinstance(s_raw := s_val, int) or (isinstance(s_raw, str) and s_raw.isdigit()):
-                            s_val_str = f"{int(s_raw):03d}"
-                        else:
-                            s_val_str = str(s_raw)
-                            
-                        if isinstance(e_raw := e_val, int) or (isinstance(e_raw, str) and e_raw.isdigit()):
-                            e_val_str = f"{int(e_raw):03d}"
-                        else:
-                            e_val_str = str(e_raw)
-
-                        if s_val_str in voice_opts:
-                            start_val = s_val_str
-                        if e_val_str in voice_opts:
-                            end_val = e_val_str
-                        break
+                for idx, img_name in enumerate(self.bg_images):
+                    def_start_idx = min(idx * chunk_size, n_voices - 1)
+                    def_end_idx = min((idx + 1) * chunk_size - 1, n_voices - 1)
+                    if def_start_idx > def_end_idx:
+                        def_start_idx = def_end_idx
+                    start_val = voice_opts[def_start_idx]
+                    end_val = voice_opts[def_end_idx]
+                    bg_ranges_to_show.append({
+                        "image_name": img_name,
+                        "start": start_val,
+                        "end": end_val,
+                        "enabled": True
+                    })
+                
+        # フォルダ内の画像名順、および開始音声番号順にソート
+        def get_image_sort_key(item):
+            name = item.get("image_name", "")
+            try:
+                img_idx = self.bg_images.index(name)
+            except ValueError:
+                img_idx = len(self.bg_images)
             
-            start_combo.set(start_val)
-            end_combo.set(end_val)
+            s_raw = item.get("start", 0)
+            try:
+                start_num = int(s_raw)
+            except ValueError:
+                start_num = 999
+            return (img_idx, start_num)
+        
+        sorted_bg_ranges = sorted(bg_ranges_to_show, key=get_image_sort_key)
+        
+        for bg_item in sorted_bg_ranges:
+            img_name = bg_item.get("image_name")
+            enabled = bg_item.get("enabled", True)
             
-            self.bg_range_combos.append({
-                'image_name': img_name,
-                'start_combo': start_combo,
-                'end_combo': end_combo
-            })
+            s_raw = bg_item.get("start")
+            e_raw = bg_item.get("end")
+            if isinstance(s_raw, int) or (isinstance(s_raw, str) and s_raw.isdigit()):
+                s_val = f"{int(s_raw):03d}"
+            else:
+                s_val = str(s_raw)
+                
+            if isinstance(e_raw, int) or (isinstance(e_raw, str) and e_raw.isdigit()):
+                e_val = f"{int(e_raw):03d}"
+            else:
+                e_val = str(e_raw)
+                
+            if img_name in self.bg_images and s_val in voice_opts and e_val in voice_opts:
+                self.add_bg_range_row(enabled=enabled, image_name=img_name, start_val=s_val, end_val=e_val)
 
     def update_bgm_ui(self):
         for child in self.bgm_scrollable_frame.winfo_children():
@@ -782,16 +922,133 @@ class ReadingVideoApp(tk.Tk):
             if val_str:
                 intervals[str(idx)] = val_str
                 
-        # 背景画像範囲の収集
-        bg_ranges = []
-        for item in self.bg_range_combos:
+        # 背景画像の実ファイルリネームと収集
+        import shutil
+        bg_dir = os.path.join(work_dir, "背景画像")
+        
+        # 1. 各コントロールの設定を収集
+        settings_to_rename = []
+        for item in self.bg_range_controls:
+            is_enabled = item['enabled_var'].get()
+            old_name = item['image_combo'].get()
             start_val = item['start_combo'].get()
             end_val = item['end_combo'].get()
-            bg_ranges.append({
-                'image_name': item['image_name'],
-                'start': start_val,
-                'end': end_val
+            settings_to_rename.append({
+                'is_enabled': is_enabled,
+                'old_name': old_name,
+                'start_val': start_val,
+                'end_val': end_val,
+                'control_item': item
             })
+
+        # 2. 実ファイルをテンポラリ退避して衝突を防止
+        temp_files = {} # {old_name: temp_path}
+        existing_images = []
+        if os.path.exists(bg_dir):
+            existing_images = [f for f in os.listdir(bg_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            
+        for idx, filename in enumerate(existing_images):
+            old_path = os.path.join(bg_dir, filename)
+            ext = os.path.splitext(filename)[1]
+            temp_name = f"__temp_{idx}{ext}"
+            temp_path = os.path.join(bg_dir, temp_name)
+            try:
+                os.rename(old_path, temp_path)
+                temp_files[filename] = temp_path
+            except Exception as e:
+                self.log_write(f"背景画像ファイルの一時退避エラー ({filename} -> {temp_name}): {e}")
+
+        # 3. none(X) の名前重複を避けるための番号管理
+        none_counter = 1
+        def get_next_none_name(ext):
+            nonlocal none_counter
+            while True:
+                candidate = f"none({none_counter}){ext}"
+                if not os.path.exists(os.path.join(bg_dir, candidate)):
+                    none_counter += 1
+                    return candidate
+                none_counter += 1
+
+        # 4. 新しい名前でファイルを配置 (移動/コピー)
+        bg_ranges = []
+        created_files = set() # 既に作成された新しいファイル名
+        
+        for item_data in settings_to_rename:
+            old_name = item_data['old_name']
+            ext = os.path.splitext(old_name)[1] if old_name else ".png"
+            if not ext:
+                ext = ".png"
+                
+            # 新ファイル名の決定
+            if item_data['is_enabled']:
+                s = item_data['start_val']
+                e = item_data['end_val']
+                if s == e:
+                    new_name = f"{s}{ext}"
+                else:
+                    new_name = f"{s}~{e}{ext}"
+            else:
+                new_name = get_next_none_name(ext)
+                
+            # テンポラリファイルから配置
+            temp_path = temp_files.get(old_name)
+            if temp_path and os.path.exists(temp_path):
+                new_path = os.path.join(bg_dir, new_name)
+                try:
+                    if new_name in created_files:
+                        # すでに同じファイルが作成されている場合はコピーする (複製)
+                        shutil.copy(temp_path, new_path)
+                    else:
+                        shutil.move(temp_path, new_path)
+                        created_files.add(new_name)
+                except Exception as e:
+                    self.log_write(f"ファイルリネームエラー ({new_name}): {e}")
+            
+            # 設定情報とGUI Comboboxの表示名を更新
+            item_data['control_item']['image_combo'].set(new_name)
+            bg_ranges.append({
+                'image_name': new_name,
+                'start': item_data['start_val'],
+                'end': item_data['end_val'],
+                'enabled': item_data['is_enabled']
+            })
+
+        # 5. 不要になったテンポラリファイルをクリーンアップ
+        for t_path in temp_files.values():
+            if os.path.exists(t_path):
+                try:
+                    os.remove(t_path)
+                except Exception:
+                    pass
+
+        # 6. self.bg_images (フォルダ内の画像名リスト) を再スキャンして更新
+        self.bg_images = []
+        if os.path.exists(bg_dir):
+            for filename in os.listdir(bg_dir):
+                if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+                    self.bg_images.append(filename)
+            self.bg_images.sort()
+
+        # すべてのコントロールの選択肢を新しいリストで更新
+        for item in self.bg_range_controls:
+            item['image_combo'].configure(values=self.bg_images)
+
+        # 7. 保存リストをソート
+        def get_image_sort_key(item):
+            name = item.get("image_name", "")
+            try:
+                img_idx = self.bg_images.index(name)
+            except ValueError:
+                img_idx = len(self.bg_images)
+            
+            s_raw = item.get("start", 0)
+            try:
+                start_num = int(s_raw)
+            except ValueError:
+                start_num = 999
+            return (img_idx, start_num)
+            
+        bg_ranges.sort(key=get_image_sort_key)
             
         # BGM設定の収集
         bgm_settings = []
@@ -975,21 +1232,35 @@ class ReadingVideoApp(tk.Tk):
                     messagebox.showerror("エラー", f"音声 [{idx:03d}] の間隔設定値が不正です（数値を入力してください）。")
                     return
                     
-        # 背景画像範囲の収集と交差チェック
+        # 背景画像範囲の収集とバリデーション
         bg_ranges = []
-        for item in self.bg_range_combos:
-            start_val = int(item['start_combo'].get())
-            end_val = int(item['end_combo'].get())
-            
-            if start_val > end_val:
-                messagebox.showerror("エラー", f"画像「{item['image_name']}」の範囲設定が不正です。\n（開始音声番号が終了音声番号より大きくなっています）")
-                return
+        for item in self.bg_range_controls:
+            if item['enabled_var'].get():
+                img_name = item['image_combo'].get()
+                if not img_name:
+                    messagebox.showerror("エラー", "画像が選択されていない範囲設定があります。")
+                    return
                 
-            bg_ranges.append({
-                'image_name': item['image_name'],
-                'start': start_val,
-                'end': end_val
-            })
+                try:
+                    start_val = int(item['start_combo'].get())
+                    end_val = int(item['end_combo'].get())
+                except ValueError:
+                    messagebox.showerror("エラー", f"画像「{img_name}」の範囲設定（開始/終了）が不正です。")
+                    return
+                
+                if start_val > end_val:
+                    messagebox.showerror("エラー", f"画像「{img_name}」の範囲設定が不正です。\n（開始音声番号が終了音声番号より大きくなっています）")
+                    return
+                    
+                bg_ranges.append({
+                    'image_name': img_name,
+                    'start': start_val,
+                    'end': end_val
+                })
+                
+        if not bg_ranges:
+            messagebox.showerror("エラー", "少なくとも1つの背景画像を有効にしてください。")
+            return
             
         # BGM設定の収集
         bgm_settings = []

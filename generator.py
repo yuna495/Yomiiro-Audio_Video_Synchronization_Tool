@@ -51,6 +51,7 @@ BACKGROUND_DARKEN_ALPHA = 55
 BG_FADE_DURATION = 0.8
 
 FONT_CANDIDATES = [
+    r"C:\Users\aki\AppData\Local\Microsoft\Windows\Fonts\HONOKA_SHIN_MINCHO_L.OTF",
     r"C:\Windows\Fonts\yumin.ttf",
     r"C:\Windows\Fonts\YuMincho.ttc",
     r"C:\Windows\Fonts\msmincho.ttc",
@@ -594,6 +595,9 @@ def run_generation(work_dir, title_text, credit_text, default_interval, interval
 
     if not (os.path.exists(voice_dir) and os.path.exists(bg_dir) and os.path.exists(subtitle_json_path)):
         raise FileNotFoundError("作品フォルダの構成（音声ファイル, 背景画像, 字幕.json）が正しくありません。")
+
+    if not bg_ranges:
+        raise ValueError("背景画像の設定（適用範囲）が1つも指定されていないか、すべて無効化されています。")
 
     font_path = find_font()
     log_callback(f"フォントを使用します: {font_path}")
