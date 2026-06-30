@@ -547,7 +547,7 @@ class RenderWorker(QObject):
 class ReadingVideoApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("朗読動画作成アプリ")
+        self.setWindowTitle("Yomiiro")
         self.resize(1280, 950)
 
         self.project = None
@@ -1098,7 +1098,7 @@ class ReadingVideoApp(QMainWindow):
     def on_clip_selected(self):
         self.media_player.stop() # 試聴停止
         self.subtitle_timer.stop() # 切り替え時にタイマーをキャンセル
-        
+
         # 背景テーブル・BGMテーブルの選択をクリア (音声側プレビューをアサート)
         if hasattr(self, "bg_table"):
             self.bg_table.blockSignals(True)
@@ -1110,7 +1110,7 @@ class ReadingVideoApp(QMainWindow):
             self.bgm_table.clearSelection()
             self.bgm_table.setCurrentItem(None)
             self.bgm_table.blockSignals(False)
-            
+
         items = self.clip_list.selectedItems()
         if not items:
             self.selected_clip_id = None

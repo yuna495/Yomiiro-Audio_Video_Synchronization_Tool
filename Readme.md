@@ -1,6 +1,5 @@
-# 読み色 - Yomiiro - 朗読動画同期ツール
+# Yomiiro - 朗読動画同期ツール
 
-Audio-Video Synchronization Tool
 音声ファイルとテキスト字幕、背景画像、BGMを直感的に組み合わせ、字幕演出を伴う朗読動画を自動生成するPySide6（Qt）製のデスクトップアプリケーションです。
 
 ---
