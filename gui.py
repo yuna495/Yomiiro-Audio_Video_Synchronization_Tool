@@ -137,6 +137,20 @@ class BVolumeWidget(QWidget):
         self.slider.blockSignals(False)
         self.valueChanged.emit(val)
 
+class RatioTableWidget(QTableWidget):
+    def __init__(self, ratios, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.ratios = ratios
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        total_width = self.viewport().width()
+        total_ratio = sum(self.ratios)
+        if total_ratio > 0:
+            for col, ratio in enumerate(self.ratios):
+                w = int(total_width * ratio / total_ratio)
+                self.setColumnWidth(col, w)
+
 class DragDropListWidget(QListWidget):
     order_changed = Signal()
     def __init__(self, parent=None):
@@ -447,7 +461,7 @@ class ReadingVideoApp(QMainWindow):
         grid_opts = QGridLayout()
         group_detail_layout.addLayout(grid_opts)
 
-        grid_opts.addWidget(QLabel("個別待ち時間:"), 0, 0)
+        grid_opts.addWidget(QLabel("次の音声までの余白（秒）:"), 0, 0)
         self.clip_gap_spin = QDoubleSpinBox()
         self.clip_gap_spin.setRange(0.0, 60.0)
         self.clip_gap_spin.setSingleStep(0.5)
@@ -474,9 +488,9 @@ class ReadingVideoApp(QMainWindow):
         right_layout.addWidget(group_detail, stretch=2)
 
         # 基本待ち時間設定（追加）
-        group_gap_config = QGroupBox(" 基本待ち時間設定 ")
+        group_gap_config = QGroupBox(" 音声クリップ間隔の初期値設定 ")
         group_gap_layout = QHBoxLayout(group_gap_config)
-        group_gap_layout.addWidget(QLabel("デフォルト無音秒数:"))
+        group_gap_layout.addWidget(QLabel("各音声クリップ間隔（秒）:"))
         self.default_gap_spin = QDoubleSpinBox()
         self.default_gap_spin.setRange(0.0, 60.0)
         self.default_gap_spin.setSingleStep(0.5)
@@ -554,16 +568,11 @@ class ReadingVideoApp(QMainWindow):
         bg_btn_bar.addWidget(btn_del_bg)
         bg_btn_bar.addStretch()
 
-        self.bg_table = QTableWidget(0, 5)
+        self.bg_table = RatioTableWidget([40, 300, 100, 100, 60], 0, 5)
         self.bg_table.setHorizontalHeaderLabels(["ID", "ファイル名", "開始クリップ", "終了クリップ", "有効"])
         self.bg_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.bg_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.bg_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.bg_table.setColumnWidth(0, 40)   # ID
-        self.bg_table.setColumnWidth(1, 300)  # ファイル名
-        self.bg_table.setColumnWidth(2, 100)   # 開始クリップ
-        self.bg_table.setColumnWidth(3, 100)   # 終了クリップ
-        self.bg_table.setColumnWidth(4, 60)   # 有効
         bg_layout.addWidget(self.bg_table)
 
         bottom_tabs.addTab(bg_widget, "背景画像")
@@ -583,20 +592,11 @@ class ReadingVideoApp(QMainWindow):
         bgm_btn_bar.addWidget(btn_del_bgm)
         bgm_btn_bar.addStretch()
 
-        self.bgm_table = QTableWidget(0, 9)
+        self.bgm_table = RatioTableWidget([40, 250, 85, 85, 200, 150, 150, 60, 60], 0, 9)
         self.bgm_table.setHorizontalHeaderLabels(["ID", "ファイル名", "開始クリップ", "終了クリップ", "音量", "フェードイン", "フェードアウト", "ループ", "有効"])
         self.bgm_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.bgm_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.bgm_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.bgm_table.setColumnWidth(0, 40)   # ID
-        self.bgm_table.setColumnWidth(1, 250)  # ファイル名
-        self.bgm_table.setColumnWidth(2, 85)   # 開始クリップ
-        self.bgm_table.setColumnWidth(3, 85)   # 終了クリップ
-        self.bgm_table.setColumnWidth(4, 200)  # 音量
-        self.bgm_table.setColumnWidth(5, 150)   # フェードイン
-        self.bgm_table.setColumnWidth(6, 150)   # フェードアウト
-        self.bgm_table.setColumnWidth(7, 60)   # ループ
-        self.bgm_table.setColumnWidth(8, 60)   # 有効
         bgm_layout.addWidget(self.bgm_table)
 
         bottom_tabs.addTab(bgm_widget, "BGM / 環境音")
@@ -637,7 +637,7 @@ class ReadingVideoApp(QMainWindow):
         self.gen_btn.clicked.connect(self.start_generation)
         gen_row.addWidget(self.gen_btn, stretch=2)
 
-        self.open_folder_btn = QPushButton("📁 保存先を開く")
+        self.open_folder_btn = QPushButton("📁 プロジェクトフォルダを開く")
         self.open_folder_btn.setFixedHeight(50)
         self.open_folder_btn.setEnabled(False)
         self.open_folder_btn.clicked.connect(self.open_output_folder)
@@ -864,7 +864,8 @@ class ReadingVideoApp(QMainWindow):
             self.bg_table.setItem(row, 0, num_item)
 
             # 2. ファイル名
-            file_item = QTableWidgetItem(os.path.basename(bg.file_path))
+            file_name = getattr(bg, "display_name", os.path.basename(bg.file_path))
+            file_item = QTableWidgetItem(file_name)
             file_item.setFlags(file_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.bg_table.setItem(row, 1, file_item)
 
@@ -955,7 +956,8 @@ class ReadingVideoApp(QMainWindow):
             self.bgm_table.setItem(row, 0, num_item)
 
             # 2. ファイル名
-            file_item = QTableWidgetItem(os.path.basename(bgm.file_path))
+            file_name = getattr(bgm, "display_name", os.path.basename(bgm.file_path))
+            file_item = QTableWidgetItem(file_name)
             file_item.setFlags(file_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.bgm_table.setItem(row, 1, file_item)
 
@@ -1068,12 +1070,13 @@ class ReadingVideoApp(QMainWindow):
     def add_background(self):
         if not self.project:
             return
-        file, _ = QFileDialog.getOpenFileName(
+        files, _ = QFileDialog.getOpenFileNames(
             self, "背景画像を追加", "",
             "Image Files (*.png *.jpg *.jpeg *.webp)"
         )
-        if file:
-            self.project.add_background_image(file)
+        if files:
+            for file in files:
+                self.project.add_background_image(file)
             self.refresh_bg_table()
             self.update_preview()
             self.project.save()
@@ -1093,12 +1096,13 @@ class ReadingVideoApp(QMainWindow):
     def add_bgm(self):
         if not self.project:
             return
-        file, _ = QFileDialog.getOpenFileName(
+        files, _ = QFileDialog.getOpenFileNames(
             self, "BGMアセットを追加", "",
             "Audio Files (*.wav *.mp3 *.m4a *.aac *.ogg *.flac)"
         )
-        if file:
-            self.project.add_bgm_track(file)
+        if files:
+            for file in files:
+                self.project.add_bgm_track(file)
             self.refresh_bgm_table()
             self.project.save()
 

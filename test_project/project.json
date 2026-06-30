@@ -59,8 +59,9 @@
     {
       "id": "bg_0001",
       "file_path": "images/bg_0001.png",
+      "display_name": "004.png",
       "start_clip_id": "clip_0001",
-      "end_clip_id": "clip_0002",
+      "end_clip_id": "clip_0003",
       "enabled": true,
       "transition": {
         "type": "fade",
@@ -70,7 +71,8 @@
     {
       "id": "bg_0002",
       "file_path": "images/bg_0002.png",
-      "start_clip_id": "clip_0003",
+      "display_name": "005.png",
+      "start_clip_id": "clip_0004",
       "end_clip_id": "clip_0005",
       "enabled": true,
       "transition": {
@@ -81,11 +83,12 @@
   ],
   "bgm_tracks": [
     {
-      "id": "bgm_0001",
-      "file_path": "bgm/bgm_0001.wav",
-      "start_clip_id": "clip_0003",
+      "id": "bgm_0003",
+      "file_path": "bgm/bgm_0003.wav",
+      "display_name": "ambient_main.wav",
+      "start_clip_id": "clip_0001",
       "end_clip_id": "clip_0005",
-      "volume": 0.25,
+      "volume": 0.12,
       "fade_in": 1.0,
       "fade_out": 3.0,
       "loop": true,

@@ -38,9 +38,10 @@ class AudioClip:
         )
 
 class BackgroundSetting:
-    def __init__(self, bg_id, file_path, start_clip_id, end_clip_id, enabled=True, transition_type="fade", transition_duration=0.8):
+    def __init__(self, bg_id, file_path, display_name, start_clip_id, end_clip_id, enabled=True, transition_type="fade", transition_duration=0.8):
         self.id = bg_id
         self.file_path = file_path  # プロジェクト相対パス (images/bg_xxxx.png)
+        self.display_name = display_name
         self.start_clip_id = start_clip_id
         self.end_clip_id = end_clip_id
         self.enabled = enabled
@@ -51,6 +52,7 @@ class BackgroundSetting:
         return {
             "id": self.id,
             "file_path": self.file_path,
+            "display_name": self.display_name,
             "start_clip_id": self.start_clip_id,
             "end_clip_id": self.end_clip_id,
             "enabled": self.enabled,
@@ -66,6 +68,7 @@ class BackgroundSetting:
         return cls(
             bg_id=d["id"],
             file_path=d["file_path"],
+            display_name=d.get("display_name", os.path.basename(d["file_path"])),
             start_clip_id=d["start_clip_id"],
             end_clip_id=d["end_clip_id"],
             enabled=d.get("enabled", True),
@@ -74,9 +77,10 @@ class BackgroundSetting:
         )
 
 class BgmSetting:
-    def __init__(self, bgm_id, file_path, start_clip_id, end_clip_id, volume=0.12, fade_in=1.0, fade_out=3.0, loop=True, enabled=True):
+    def __init__(self, bgm_id, file_path, display_name, start_clip_id, end_clip_id, volume=0.12, fade_in=1.0, fade_out=3.0, loop=True, enabled=True):
         self.id = bgm_id
         self.file_path = file_path  # プロジェクト相対パス (bgm/bgm_xxxx.mp3)
+        self.display_name = display_name
         self.start_clip_id = start_clip_id
         self.end_clip_id = end_clip_id
         self.volume = volume
@@ -89,6 +93,7 @@ class BgmSetting:
         return {
             "id": self.id,
             "file_path": self.file_path,
+            "display_name": self.display_name,
             "start_clip_id": self.start_clip_id,
             "end_clip_id": self.end_clip_id,
             "volume": self.volume,
@@ -103,6 +108,7 @@ class BgmSetting:
         return cls(
             bgm_id=d["id"],
             file_path=d["file_path"],
+            display_name=d.get("display_name", os.path.basename(d["file_path"])),
             start_clip_id=d["start_clip_id"],
             end_clip_id=d["end_clip_id"],
             volume=d.get("volume", 0.12),
@@ -273,7 +279,7 @@ class Project:
         start_clip = self.audio_clips[0].id if self.audio_clips else ""
         end_clip = self.audio_clips[-1].id if self.audio_clips else ""
         
-        bg = BackgroundSetting(bg_id, f"images/{dest_filename}", start_clip, end_clip)
+        bg = BackgroundSetting(bg_id, f"images/{dest_filename}", os.path.basename(src_path), start_clip, end_clip)
         self.backgrounds.append(bg)
         return bg
 
@@ -295,7 +301,7 @@ class Project:
         start_clip = self.audio_clips[0].id if self.audio_clips else ""
         end_clip = self.audio_clips[-1].id if self.audio_clips else ""
         
-        bgm = BgmSetting(bgm_id, f"bgm/{dest_filename}", start_clip, end_clip)
+        bgm = BgmSetting(bgm_id, f"bgm/{dest_filename}", os.path.basename(src_path), start_clip, end_clip)
         self.bgm_tracks.append(bgm)
         return bgm
 
