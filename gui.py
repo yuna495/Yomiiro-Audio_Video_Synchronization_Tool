@@ -11,8 +11,9 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QFileDialog, QMessageBox, QDialog,
     QDialogButtonBox, QSizePolicy, QProgressBar
 )
-from PySide6.QtCore import Qt, QThread, Signal, QObject, QTimer
+from PySide6.QtCore import Qt, QThread, Signal, QObject, QTimer, QUrl
 from PySide6.QtGui import QImage, QPixmap, QFont, QIcon, QPainter, QShortcut, QKeySequence
+from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 
 import core
 import renderer
@@ -529,6 +530,12 @@ class ReadingVideoApp(QMainWindow):
         self.subtitle_timer.setInterval(1000) # 1秒 (1000ms)
         self.subtitle_timer.timeout.connect(self.update_preview_from_timer)
 
+        # 音声プレビュー用のメディアプレイヤー
+        self.media_player = QMediaPlayer(self)
+        self.audio_output = QAudioOutput(self)
+        self.media_player.setAudioOutput(self.audio_output)
+        self.media_player.playbackStateChanged.connect(self.on_playback_state_changed)
+
         self.apply_dark_theme()
         self.build_ui()
 
@@ -831,6 +838,12 @@ class ReadingVideoApp(QMainWindow):
         vol_lay.addWidget(self.clip_vol_spin)
         grid_opts.addLayout(vol_lay, 1, 1)
 
+        # 個別音量の試聴ボタン
+        grid_opts.addWidget(QLabel("個別音量の試聴:"), 2, 0)
+        self.play_btn = QPushButton("▶ 試聴")
+        self.play_btn.clicked.connect(self.toggle_play_clip)
+        grid_opts.addWidget(self.play_btn, 2, 1)
+
         right_layout.addWidget(group_detail, stretch=1)
         splitter.addWidget(right_widget)
 
@@ -1036,6 +1049,7 @@ class ReadingVideoApp(QMainWindow):
                     break
 
     def on_clip_selected(self):
+        self.media_player.stop() # 試聴停止
         self.subtitle_timer.stop() # 切り替え時にタイマーをキャンセル
         items = self.clip_list.selectedItems()
         if not items:
@@ -1443,6 +1457,8 @@ class ReadingVideoApp(QMainWindow):
     # プロジェクトロード・UI同期
     # ------------------
     def update_project_ui(self):
+        if hasattr(self, "media_player"):
+            self.media_player.stop()
         if not self.project:
             self.project_label.setText("プロジェクト: 未設定")
             return
@@ -1673,6 +1689,33 @@ class ReadingVideoApp(QMainWindow):
         self.project.bgm_tracks.insert(dest, bgm)
         self.project.save()
         self.refresh_bgm_table()
+
+    def toggle_play_clip(self):
+        if not self.project or not self.selected_clip_id:
+            return
+        clip = next((c for c in self.project.audio_clips if c.id == self.selected_clip_id), None)
+        if not clip:
+            return
+
+        if self.media_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.media_player.stop()
+        else:
+            clip_abspath = os.path.abspath(os.path.join(self.project.project_dir, clip.file_path))
+            if not os.path.exists(clip_abspath):
+                QMessageBox.warning(self, "警告", "音声ファイルが見つかりません。")
+                return
+
+            self.audio_output.setVolume(clip.volume)
+            self.media_player.setSource(QUrl.fromLocalFile(clip_abspath))
+            self.media_player.play()
+
+    def on_playback_state_changed(self, state):
+        if state == QMediaPlayer.PlaybackState.PlayingState:
+            self.play_btn.setText("■ 停止")
+            self.play_btn.setStyleSheet("background-color: #5a2a2a; font-weight: bold; color: #ffffff;")
+        else:
+            self.play_btn.setText("▶ 試聴")
+            self.play_btn.setStyleSheet("")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
