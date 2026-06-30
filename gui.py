@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QFileDialog, QMessageBox, QDialog,
     QDialogButtonBox, QSizePolicy, QProgressBar
 )
-from PySide6.QtCore import Qt, QThread, Signal, QObject
+from PySide6.QtCore import Qt, QThread, Signal, QObject, QTimer
 from PySide6.QtGui import QImage, QPixmap, QFont, QIcon, QPainter, QShortcut, QKeySequence
 
 import core
@@ -408,6 +408,13 @@ class RatioTableWidget(QTableWidget):
     def __init__(self, ratios, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.ratios = ratios
+        
+        # 垂直ヘッダー(行番号)を非表示にする(白い背景とダブる番号の解消)
+        self.verticalHeader().setVisible(False)
+        
+        # 選択モードをセル選択にし、IDとファイル名のみハイライト制限する
+        self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectItems)
+        self.itemSelectionChanged.connect(self.limit_selection_to_id_and_name)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -417,6 +424,62 @@ class RatioTableWidget(QTableWidget):
             for col, ratio in enumerate(self.ratios):
                 w = int(total_width * ratio / total_ratio)
                 self.setColumnWidth(col, w)
+
+    def mousePressEvent(self, event):
+        # 何もないエリアをクリックしたら選択をクリア
+        item = self.itemAt(event.position().toPoint())
+        if item is None:
+            self.clearSelection()
+            self.setCurrentItem(None)
+        else:
+            super().mousePressEvent(event)
+
+    def limit_selection_to_id_and_name(self):
+        self.blockSignals(True)
+        selected_rows = set()
+        for item in self.selectedItems():
+            selected_rows.add(item.row())
+            
+        self.clearSelection()
+        for row in selected_rows:
+            item0 = self.item(row, 0)
+            item1 = self.item(row, 1)
+            if item0:
+                item0.setSelected(True)
+            if item1:
+                item1.setSelected(True)
+        self.blockSignals(False)
+
+class DragDropTableWidget(RatioTableWidget):
+    order_changed = Signal(int, int)
+    
+    def __init__(self, ratios, *args, **kwargs):
+        super().__init__(ratios, *args, **kwargs)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDragDropOverwriteMode(False)
+        self.setDragDropMode(QTableWidget.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+
+    def dropEvent(self, event):
+        src_item = self.currentItem()
+        if not src_item:
+            return
+        src_row = src_item.row()
+        
+        pos = event.position().toPoint()
+        dest_item = self.itemAt(pos)
+        
+        if dest_item:
+            dest_row = dest_item.row()
+        else:
+            dest_row = self.rowCount() - 1
+            
+        if src_row != dest_row:
+            self.order_changed.emit(src_row, dest_row)
+            event.accept()
+        else:
+            event.ignore()
 
 class DragDropListWidget(QListWidget):
     order_changed = Signal()
@@ -459,6 +522,12 @@ class ReadingVideoApp(QMainWindow):
         self.thread = None
         self.worker = None
         self.app_config = AppConfig()
+
+        # 字幕テキスト入力遅延プレビュー更新タイマー
+        self.subtitle_timer = QTimer(self)
+        self.subtitle_timer.setSingleShot(True)
+        self.subtitle_timer.setInterval(1000) # 1秒 (1000ms)
+        self.subtitle_timer.timeout.connect(self.update_preview_from_timer)
 
         self.apply_dark_theme()
         self.build_ui()
@@ -730,6 +799,7 @@ class ReadingVideoApp(QMainWindow):
 
         group_detail_layout.addWidget(QLabel("字幕テキスト:"))
         self.subtitle_text = QTextEdit()
+        self.subtitle_text.setStyleSheet("font-size: 16px;") # 大きくして視認性を向上
         self.subtitle_text.textChanged.connect(self.on_subtitle_changed)
         group_detail_layout.addWidget(self.subtitle_text, stretch=1)
 
@@ -786,11 +856,11 @@ class ReadingVideoApp(QMainWindow):
         bg_btn_bar.addWidget(btn_del_bg)
         bg_btn_bar.addStretch()
 
-        self.bg_table = RatioTableWidget([40, 300, 100, 100, 60], 0, 5)
+        self.bg_table = DragDropTableWidget([40, 300, 100, 100, 60], 0, 5)
         self.bg_table.setHorizontalHeaderLabels(["ID", "ファイル名", "開始クリップ", "終了クリップ", "有効"])
         self.bg_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.bg_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.bg_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.bg_table.order_changed.connect(self.on_bg_order_changed)
         bg_layout.addWidget(self.bg_table)
 
         bottom_tabs.addTab(bg_widget, "背景画像")
@@ -810,11 +880,11 @@ class ReadingVideoApp(QMainWindow):
         bgm_btn_bar.addWidget(btn_del_bgm)
         bgm_btn_bar.addStretch()
 
-        self.bgm_table = RatioTableWidget([40, 250, 85, 85, 200, 150, 150, 60, 60], 0, 9)
+        self.bgm_table = DragDropTableWidget([40, 250, 85, 85, 200, 150, 150, 60, 60], 0, 9)
         self.bgm_table.setHorizontalHeaderLabels(["ID", "ファイル名", "開始クリップ", "終了クリップ", "音量", "フェードイン", "フェードアウト", "ループ", "有効"])
         self.bgm_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.bgm_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.bgm_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.bgm_table.order_changed.connect(self.on_bgm_order_changed)
         bgm_layout.addWidget(self.bgm_table)
 
         bottom_tabs.addTab(bgm_widget, "BGM / 環境音")
@@ -966,6 +1036,7 @@ class ReadingVideoApp(QMainWindow):
                     break
 
     def on_clip_selected(self):
+        self.subtitle_timer.stop() # 切り替え時にタイマーをキャンセル
         items = self.clip_list.selectedItems()
         if not items:
             self.selected_clip_id = None
@@ -1009,7 +1080,10 @@ class ReadingVideoApp(QMainWindow):
         clip = next((c for c in self.project.audio_clips if c.id == self.selected_clip_id), None)
         if clip:
             clip.subtitle = self.subtitle_text.toPlainText().strip()
-            self.update_preview()
+            self.subtitle_timer.start() # 1秒後にプレビューを更新
+
+    def update_preview_from_timer(self):
+        self.update_preview()
 
     def on_clip_vol_changed(self, val):
         if not self.project or not self.selected_clip_id:
@@ -1573,6 +1647,32 @@ class ReadingVideoApp(QMainWindow):
                 pass
             self.output_ent.setText(file)
             self.project.output_path = file
+
+    def mousePressEvent(self, event):
+        if hasattr(self, "bg_table"):
+            self.bg_table.clearSelection()
+            self.bg_table.setCurrentItem(None)
+        if hasattr(self, "bgm_table"):
+            self.bgm_table.clearSelection()
+            self.bgm_table.setCurrentItem(None)
+        super().mousePressEvent(event)
+
+    def on_bg_order_changed(self, src, dest):
+        if not self.project:
+            return
+        bg = self.project.backgrounds.pop(src)
+        self.project.backgrounds.insert(dest, bg)
+        self.project.save()
+        self.refresh_bg_table()
+        self.update_preview()
+
+    def on_bgm_order_changed(self, src, dest):
+        if not self.project:
+            return
+        bgm = self.project.bgm_tracks.pop(src)
+        self.project.bgm_tracks.insert(dest, bgm)
+        self.project.save()
+        self.refresh_bgm_table()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
