@@ -8,7 +8,39 @@ import imageio_ffmpeg
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from core import Project, AudioClip, BackgroundSetting, BgmSetting, SubtitleStyle
 
-def find_font():
+import winreg
+
+def get_system_font_paths():
+    font_map = {}
+    fonts_dir = os.path.join(os.environ.get("SystemRoot", "C:\\Windows"), "Fonts")
+    key_path = r"Software\Microsoft\Windows NT\CurrentVersion\Fonts"
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
+            for i in range(5000):
+                try:
+                    name, value, _ = winreg.EnumValue(key, i)
+                    family = name.split(" (")[0]
+                    families = [f.strip() for f in family.split("&")]
+                    if not os.path.isabs(value):
+                        full_path = os.path.join(fonts_dir, value)
+                    else:
+                        full_path = value
+                    if os.path.exists(full_path):
+                        for f in families:
+                            font_map[f] = full_path
+                except OSError:
+                    break
+    except Exception:
+        pass
+    return font_map
+
+def find_font(font_family=None):
+    # ユーザー指定のファミリー名がある場合、システムフォントから優先検索
+    if font_family:
+        font_map = get_system_font_paths()
+        if font_family in font_map:
+            return font_map[font_family]
+
     # 1. アプリのディレクトリ直下、または fonts/ フォルダ内の日本語フォントを優先探索
     script_dir = os.path.dirname(os.path.abspath(__file__))
     exts = (".ttf", ".otf", ".ttc")
@@ -226,7 +258,7 @@ def generate_preview_image(project: Project, clip_id: str):
     target_clip = next((c for c in project.audio_clips if c.id == clip_id), None)
     if target_clip and target_clip.subtitle:
         try:
-            font_path = find_font()
+            font_path = find_font(project.subtitle_style.font_family)
             font = ImageFont.truetype(font_path, project.subtitle_style.font_size)
             frame = draw_subtitle_on_frame(frame, target_clip.subtitle, project.subtitle_style, font, project.width, project.height)
         except Exception as e:
@@ -241,7 +273,7 @@ def render_movie(project: Project, log_callback=print):
     if not timeline.clips_timeline:
         raise ValueError("有効な音声クリップがありません。")
         
-    font_path = find_font()
+    font_path = find_font(project.subtitle_style.font_family)
     log_callback(f"フォントファイル: {font_path}")
     
     temp_voice_wav = os.path.join(project.project_dir, "temp_voice_combined.wav")

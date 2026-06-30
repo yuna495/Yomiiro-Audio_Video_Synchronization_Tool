@@ -137,6 +137,273 @@ class BVolumeWidget(QWidget):
         self.slider.blockSignals(False)
         self.valueChanged.emit(val)
 
+class AppConfig:
+    def __init__(self):
+        self.config_path = os.path.abspath(os.path.join(os.getcwd(), "app_config.json"))
+        self.default_interval = 0.5
+        self.font_family = "Yu Mincho"
+        self.font_size = 58
+        self.position = "bottom"
+        self.text_color = "#EEF1F8"
+        self.box_color = "#000000"
+        self.box_opacity = 0.5
+        self.margin_bottom = 95
+        self.load()
+
+    def load(self):
+        if os.path.exists(self.config_path):
+            try:
+                import json
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.default_interval = data.get("default_interval", 0.5)
+                style = data.get("subtitle_style", {})
+                self.font_family = style.get("font_family", "Yu Mincho")
+                self.font_size = style.get("font_size", 58)
+                self.position = style.get("position", "bottom")
+                self.text_color = style.get("text_color", "#EEF1F8")
+                self.box_color = style.get("box_color", "#000000")
+                self.box_opacity = style.get("box_opacity", 0.5)
+                self.margin_bottom = style.get("margin_bottom", 95)
+            except Exception:
+                pass
+
+    def save(self):
+        import json
+        data = {
+            "default_interval": self.default_interval,
+            "subtitle_style": {
+                "font_family": self.font_family,
+                "font_size": self.font_size,
+                "position": self.position,
+                "text_color": self.text_color,
+                "box_color": self.box_color,
+                "box_opacity": self.box_opacity,
+                "margin_bottom": self.margin_bottom
+            }
+        }
+        try:
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+
+class ConfigDialog(QDialog):
+    def __init__(self, app_config, project, parent=None):
+        super().__init__(parent)
+        self.app_config = app_config
+        self.project = project
+        self.setWindowTitle("アプリ・プロジェクト設定")
+        self.resize(500, 520)
+        
+        # システムフォント一覧の取得
+        self.system_fonts = []
+        try:
+            self.system_fonts = sorted(list(renderer.get_system_font_paths().keys()))
+        except Exception:
+            pass
+        if not self.system_fonts:
+            self.system_fonts = ["Yu Gothic", "Yu Mincho", "MS Gothic", "MS Mincho", "Meiryo"]
+            
+        # デフォルトの明朝体フォントを決定
+        self.default_mincho = "Yu Mincho"
+        if self.default_mincho not in self.system_fonts:
+            alternatives = ["YuMincho", "MS Mincho", "Hiragino Mincho ProN", "游明朝", "游明朝体", "ＭＳ 明朝"]
+            for alt in alternatives:
+                if alt in self.system_fonts:
+                    self.default_mincho = alt
+                    break
+            
+        layout = QVBoxLayout(self)
+        
+        self.tabs = QTabWidget()
+        layout.addWidget(self.tabs)
+        
+        # 1. プロジェクト個別設定タブ
+        self.proj_tab = QWidget()
+        self.build_proj_tab()
+        self.tabs.addTab(self.proj_tab, "現在のプロジェクト設定")
+
+        # 2. アプリ全体のデフォルト設定タブ
+        self.app_tab = QWidget()
+        self.build_app_tab()
+        self.tabs.addTab(self.app_tab, "アプリ初期設定")
+
+        # ボタン
+        self.buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+            parent=self
+        )
+        self.buttons.accepted.connect(self.accept_and_save)
+        self.buttons.rejected.connect(self.reject)
+        layout.addWidget(self.buttons)
+
+        # プロジェクトが無い場合はプロジェクトタブを非活性に (インデックス0)
+        if not self.project:
+            self.tabs.setTabEnabled(0, False)
+            self.proj_chk.setEnabled(False)
+            self.proj_chk.setChecked(False)
+
+    def build_app_tab(self):
+        lay = QVBoxLayout(self.app_tab)
+        form = QGridLayout()
+        lay.addLayout(form)
+        
+        form.addWidget(QLabel("デフォルト音声間隔:"), 0, 0)
+        self.app_gap_spin = QDoubleSpinBox()
+        self.app_gap_spin.setRange(0.0, 60.0)
+        self.app_gap_spin.setSuffix("s")
+        self.app_gap_spin.setValue(self.app_config.default_interval)
+        form.addWidget(self.app_gap_spin, 0, 1)
+        
+        form.addWidget(QLabel("字幕フォント:"), 1, 0)
+        self.app_font_combo = QComboBox()
+        self.app_font_combo.addItems(self.system_fonts)
+        if self.app_config.font_family in self.system_fonts:
+            self.app_font_combo.setCurrentText(self.app_config.font_family)
+        else:
+            self.app_font_combo.setCurrentText(self.default_mincho)
+        form.addWidget(self.app_font_combo, 1, 1)
+        
+        form.addWidget(QLabel("字幕フォントサイズ:"), 2, 0)
+        self.app_font_size = QSpinBox()
+        self.app_font_size.setRange(10, 200)
+        self.app_font_size.setValue(self.app_config.font_size)
+        form.addWidget(self.app_font_size, 2, 1)
+        
+        form.addWidget(QLabel("字幕表示位置:"), 3, 0)
+        self.app_position = QComboBox()
+        self.app_position.addItems(["top", "center", "bottom"])
+        self.app_position.setCurrentText(self.app_config.position)
+        form.addWidget(self.app_position, 3, 1)
+        
+        form.addWidget(QLabel("字幕文字色:"), 4, 0)
+        self.app_text_color = QLineEdit(self.app_config.text_color)
+        form.addWidget(self.app_text_color, 4, 1)
+        
+        form.addWidget(QLabel("背景ボックス色:"), 5, 0)
+        self.app_box_color = QLineEdit(self.app_config.box_color)
+        form.addWidget(self.app_box_color, 5, 1)
+        
+        form.addWidget(QLabel("ボックス不透明度:"), 6, 0)
+        self.app_box_opacity = QDoubleSpinBox()
+        self.app_box_opacity.setRange(0.0, 1.0)
+        self.app_box_opacity.setSingleStep(0.1)
+        self.app_box_opacity.setValue(self.app_config.box_opacity)
+        form.addWidget(self.app_box_opacity, 6, 1)
+        
+        form.addWidget(QLabel("下マージン:"), 7, 0)
+        self.app_margin = QSpinBox()
+        self.app_margin.setRange(0, 500)
+        self.app_margin.setValue(self.app_config.margin_bottom)
+        form.addWidget(self.app_margin, 7, 1)
+        
+        lay.addStretch()
+
+    def build_proj_tab(self):
+        lay = QVBoxLayout(self.proj_tab)
+        
+        self.proj_chk = QCheckBox("このプロジェクトで個別の設定を使用する（アプリ設定を上書き）")
+        lay.addWidget(self.proj_chk)
+        
+        self.proj_form_widget = QWidget()
+        self.proj_form = QGridLayout(self.proj_form_widget)
+        lay.addWidget(self.proj_form_widget)
+        
+        self.proj_form.addWidget(QLabel("デフォルト音声間隔:"), 0, 0)
+        self.proj_gap_spin = QDoubleSpinBox()
+        self.proj_gap_spin.setRange(0.0, 60.0)
+        self.proj_gap_spin.setSuffix("s")
+        self.proj_form.addWidget(self.proj_gap_spin, 0, 1)
+        
+        self.proj_form.addWidget(QLabel("字幕フォント:"), 1, 0)
+        self.proj_font_combo = QComboBox()
+        self.proj_font_combo.addItems(self.system_fonts)
+        self.proj_form.addWidget(self.proj_font_combo, 1, 1)
+        
+        self.proj_form.addWidget(QLabel("字幕フォントサイズ:"), 2, 0)
+        self.proj_font_size = QSpinBox()
+        self.proj_font_size.setRange(10, 200)
+        self.proj_form.addWidget(self.proj_font_size, 2, 1)
+        
+        self.proj_form.addWidget(QLabel("字幕表示位置:"), 3, 0)
+        self.proj_position = QComboBox()
+        self.proj_position.addItems(["top", "center", "bottom"])
+        self.proj_form.addWidget(self.proj_position, 3, 1)
+        
+        self.proj_form.addWidget(QLabel("字幕文字色:"), 4, 0)
+        self.proj_text_color = QLineEdit()
+        self.proj_form.addWidget(self.proj_text_color, 4, 1)
+        
+        self.proj_form.addWidget(QLabel("背景ボックス色:"), 5, 0)
+        self.proj_box_color = QLineEdit()
+        self.proj_form.addWidget(self.proj_box_color, 5, 1)
+        
+        self.proj_form.addWidget(QLabel("ボックス不透明度:"), 6, 0)
+        self.proj_box_opacity = QDoubleSpinBox()
+        self.proj_box_opacity.setRange(0.0, 1.0)
+        self.proj_box_opacity.setSingleStep(0.1)
+        self.proj_form.addWidget(self.proj_box_opacity, 6, 1)
+        
+        self.proj_form.addWidget(QLabel("下マージン:"), 7, 0)
+        self.proj_margin = QSpinBox()
+        self.proj_margin.setRange(0, 500)
+        self.proj_form.addWidget(self.proj_margin, 7, 1)
+        
+        lay.addStretch()
+        
+        # 連動設定
+        self.proj_chk.toggled.connect(self.on_proj_chk_toggled)
+        
+        if self.project:
+            self.proj_chk.setChecked(self.project.use_project_settings)
+            self.proj_gap_spin.setValue(self.project.default_interval)
+            style = self.project.subtitle_style
+            if style.font_family in self.system_fonts:
+                self.proj_font_combo.setCurrentText(style.font_family)
+            else:
+                self.proj_font_combo.setCurrentText(self.default_mincho)
+            self.proj_font_size.setValue(style.font_size)
+            self.proj_position.setCurrentText(style.position)
+            self.proj_text_color.setText(style.text_color)
+            self.proj_box_color.setText(style.box_color)
+            self.proj_box_opacity.setValue(style.box_opacity)
+            self.proj_margin.setValue(style.margin_bottom)
+            
+        self.on_proj_chk_toggled(self.proj_chk.isChecked())
+
+    def on_proj_chk_toggled(self, checked):
+        self.proj_form_widget.setEnabled(checked)
+
+    def accept_and_save(self):
+        # 1. アプリ設定を保存
+        self.app_config.default_interval = self.app_gap_spin.value()
+        self.app_config.font_family = self.app_font_combo.currentText()
+        self.app_config.font_size = self.app_font_size.value()
+        self.app_config.position = self.app_position.currentText()
+        self.app_config.text_color = self.app_text_color.text().strip()
+        self.app_config.box_color = self.app_box_color.text().strip()
+        self.app_config.box_opacity = self.app_box_opacity.value()
+        self.app_config.margin_bottom = self.app_margin.value()
+        self.app_config.save()
+        
+        # 2. プロジェクト個別設定を保存
+        if self.project:
+            self.project.use_project_settings = self.proj_chk.isChecked()
+            if self.project.use_project_settings:
+                self.project.default_interval = self.proj_gap_spin.value()
+                style = self.project.subtitle_style
+                style.font_family = self.proj_font_combo.currentText()
+                style.font_size = self.proj_font_size.value()
+                style.position = self.proj_position.currentText()
+                style.text_color = self.proj_text_color.text().strip()
+                style.box_color = self.proj_box_color.text().strip()
+                style.box_opacity = self.proj_box_opacity.value()
+                style.margin_bottom = self.proj_margin.value()
+            self.project.save()
+            
+        self.accept()
+
 class RatioTableWidget(QTableWidget):
     def __init__(self, ratios, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -191,6 +458,7 @@ class ReadingVideoApp(QMainWindow):
 
         self.thread = None
         self.worker = None
+        self.app_config = AppConfig()
 
         self.apply_dark_theme()
         self.build_ui()
@@ -381,6 +649,10 @@ class ReadingVideoApp(QMainWindow):
         btn_clean.clicked.connect(self.clean_unused_files)
         top_bar.addWidget(btn_clean)
 
+        btn_config = QPushButton("⚙️ 設定")
+        btn_config.clicked.connect(self.open_config_dialog)
+        top_bar.addWidget(btn_config)
+
         self.project_label = QLabel("プロジェクト: 未設定")
         self.project_label.setStyleSheet("font-style: italic; color: #a0a0a0; margin-left: 10px;")
         top_bar.addWidget(self.project_label)
@@ -455,7 +727,7 @@ class ReadingVideoApp(QMainWindow):
         group_detail_layout.addWidget(QLabel("字幕テキスト:"))
         self.subtitle_text = QTextEdit()
         self.subtitle_text.textChanged.connect(self.on_subtitle_changed)
-        group_detail_layout.addWidget(self.subtitle_text)
+        group_detail_layout.addWidget(self.subtitle_text, stretch=1)
 
         # 個別無音時間・音量スライダー (グリッドレイアウト)
         grid_opts = QGridLayout()
@@ -485,65 +757,7 @@ class ReadingVideoApp(QMainWindow):
         vol_lay.addWidget(self.clip_vol_spin)
         grid_opts.addLayout(vol_lay, 1, 1)
 
-        right_layout.addWidget(group_detail, stretch=2)
-
-        # 基本待ち時間設定（追加）
-        group_gap_config = QGroupBox(" 音声クリップ間隔の初期値設定 ")
-        group_gap_layout = QHBoxLayout(group_gap_config)
-        group_gap_layout.addWidget(QLabel("各音声クリップ間隔（秒）:"))
-        self.default_gap_spin = QDoubleSpinBox()
-        self.default_gap_spin.setRange(0.0, 60.0)
-        self.default_gap_spin.setSingleStep(0.5)
-        self.default_gap_spin.setSuffix("s")
-        self.default_gap_spin.valueChanged.connect(self.on_default_gap_changed)
-        group_gap_layout.addWidget(self.default_gap_spin)
-        group_gap_layout.addStretch()
-        right_layout.addWidget(group_gap_config)
-
-        # 字幕スタイル設定
-        group_style = QGroupBox(" 字幕スタイル（全体） ")
-        group_style_grid = QGridLayout(group_style)
-
-        group_style_grid.addWidget(QLabel("フォントサイズ:"), 0, 0)
-        self.font_size_spin = QSpinBox()
-        self.font_size_spin.setRange(20, 150)
-        self.font_size_spin.setValue(58)
-        self.font_size_spin.valueChanged.connect(self.on_style_changed)
-        group_style_grid.addWidget(self.font_size_spin, 0, 1)
-
-        group_style_grid.addWidget(QLabel("表示位置:"), 0, 2)
-        self.pos_combo = QComboBox()
-        self.pos_combo.addItems(["top", "center", "bottom"])
-        self.pos_combo.setCurrentText("bottom")
-        self.pos_combo.currentTextChanged.connect(self.on_style_changed)
-        group_style_grid.addWidget(self.pos_combo, 0, 3)
-
-        group_style_grid.addWidget(QLabel("文字色:"), 1, 0)
-        self.text_color_ent = QLineEdit("#EEF1F8")
-        self.text_color_ent.textChanged.connect(self.on_style_changed)
-        group_style_grid.addWidget(self.text_color_ent, 1, 1)
-
-        group_style_grid.addWidget(QLabel("背景ボックス色:"), 1, 2)
-        self.box_color_ent = QLineEdit("#000000")
-        self.box_color_ent.textChanged.connect(self.on_style_changed)
-        group_style_grid.addWidget(self.box_color_ent, 1, 3)
-
-        group_style_grid.addWidget(QLabel("不透明度:"), 2, 0)
-        self.box_opacity_spin = QDoubleSpinBox()
-        self.box_opacity_spin.setRange(0.0, 1.0)
-        self.box_opacity_spin.setSingleStep(0.1)
-        self.box_opacity_spin.setValue(0.5)
-        self.box_opacity_spin.valueChanged.connect(self.on_style_changed)
-        group_style_grid.addWidget(self.box_opacity_spin, 2, 1)
-
-        group_style_grid.addWidget(QLabel("下マージン:"), 2, 2)
-        self.margin_spin = QSpinBox()
-        self.margin_spin.setRange(10, 300)
-        self.margin_spin.setValue(95)
-        self.margin_spin.valueChanged.connect(self.on_style_changed)
-        group_style_grid.addWidget(self.margin_spin, 2, 3)
-
-        right_layout.addWidget(group_style, stretch=1)
+        right_layout.addWidget(group_detail, stretch=1)
         splitter.addWidget(right_widget)
 
         splitter.setSizes([480, 350, 450])
@@ -816,24 +1030,6 @@ class ReadingVideoApp(QMainWindow):
             self.refresh_bgm_table()
             self.update_preview()
 
-    def on_default_gap_changed(self, val):
-        if self.project:
-            self.project.default_interval = val
-            self.project.save()
-
-    def on_style_changed(self):
-        if not self.project:
-            return
-
-        style = self.project.subtitle_style
-        style.font_size = self.font_size_spin.value()
-        style.position = self.pos_combo.currentText()
-        style.text_color = self.text_color_ent.text()
-        style.box_color = self.box_color_ent.text()
-        style.box_opacity = self.box_opacity_spin.value()
-        style.margin_bottom = self.margin_spin.value()
-
-        self.update_preview()
 
     def on_output_changed(self, text):
         if self.project:
@@ -1160,21 +1356,8 @@ class ReadingVideoApp(QMainWindow):
         out_file = self.project.get_output_abspath()
         self.open_folder_btn.setEnabled(os.path.exists(out_file))
 
-        # 字幕スタイル
-        style = self.project.subtitle_style
-        self.font_size_spin.setValue(style.font_size)
-        self.pos_combo.setCurrentText(style.position)
-        self.text_color_ent.setText(style.text_color)
-        self.box_color_ent.setText(style.box_color)
-        self.box_opacity_spin.setValue(style.box_opacity)
-        self.margin_spin.setValue(style.margin_bottom)
-
-        # 基本待ち時間
-        self.default_gap_spin.blockSignals(True)
-        # core.Projectにdefault_intervalフィールドが無い場合を考慮
-        val = getattr(self.project, "default_interval", 0.5)
-        self.default_gap_spin.setValue(val)
-        self.default_gap_spin.blockSignals(False)
+        # 設定の同期（プロジェクト個別設定を使用しない場合はアプリデフォルトを同期）
+        self.sync_project_settings()
 
         self.refresh_clip_list()
         self.refresh_bg_table()
@@ -1198,6 +1381,33 @@ class ReadingVideoApp(QMainWindow):
             self.preview_widget.set_pixmap(pix)
         except Exception as e:
             self.preview_widget.set_text(f"プレビューエラー:\n{e}")
+
+    # ------------------
+    # アプリ設定・プロジェクト設定の同期・ダイアログ
+    # ------------------
+    def open_config_dialog(self):
+        dlg = ConfigDialog(self.app_config, self.project, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.sync_project_settings()
+            self.update_preview()
+            self.refresh_clip_list()
+            self.log_write("設定を更新しました。")
+
+    def sync_project_settings(self):
+        if not self.project:
+            return
+        if not self.project.use_project_settings:
+            # アプリ設定のデフォルト値を同期
+            self.project.default_interval = self.app_config.default_interval
+            style = self.project.subtitle_style
+            style.font_family = self.app_config.font_family
+            style.font_size = self.app_config.font_size
+            style.position = self.app_config.position
+            style.text_color = self.app_config.text_color
+            style.box_color = self.app_config.box_color
+            style.box_opacity = self.app_config.box_opacity
+            style.margin_bottom = self.app_config.margin_bottom
+            self.project.save()
 
     # ------------------
     # ログ出力・動画生成スレッド
@@ -1226,9 +1436,8 @@ class ReadingVideoApp(QMainWindow):
         self.open_folder_btn.setEnabled(False)
         self.log_area.clear()
 
-        # default_intervalがProjectモデルにセットされていることを確認
-        self.project.default_interval = self.default_gap_spin.value()
-        self.project.save()
+        # レンダリング前に設定の同期を確認
+        self.sync_project_settings()
 
         self.thread = QThread()
         self.worker = RenderWorker(self.project)
@@ -1301,9 +1510,8 @@ class ReadingVideoApp(QMainWindow):
 
     def save_project(self):
         if self.project:
-            self.on_style_changed()
+            self.sync_project_settings()
             self.project.output_path = self.output_ent.text().strip()
-            self.project.default_interval = self.default_gap_spin.value()
             self.project.save()
             self.log_write("プロジェクト設定を保存しました。")
             QMessageBox.information(self, "保存完了", "プロジェクトを保存しました。")

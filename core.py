@@ -119,7 +119,7 @@ class BgmSetting:
         )
 
 class SubtitleStyle:
-    def __init__(self, font_family="Yu Gothic", font_size=58, text_color="#EEF1F8", shadow_color="#000000", box_color="#000000", box_opacity=0.5, position="bottom", margin_bottom=95, max_width=1500, line_spacing=16):
+    def __init__(self, font_family="Yu Mincho", font_size=58, text_color="#EEF1F8", shadow_color="#000000", box_color="#000000", box_opacity=0.5, position="bottom", margin_bottom=95, max_width=1500, line_spacing=16):
         self.font_family = font_family
         self.font_size = font_size
         self.text_color = text_color
@@ -169,6 +169,7 @@ class Project:
         self.fps = 30
         self.output_path = "reading_video.mp4"
         self.default_interval = 0.5
+        self.use_project_settings = False
         self.audio_clips = []
         self.backgrounds = []
         self.bgm_tracks = []
@@ -191,6 +192,7 @@ class Project:
                 "output_path": self.output_path
             },
             "default_interval": self.default_interval,
+            "use_project_settings": self.use_project_settings,
             "audio_clips": [c.to_dict() for c in self.audio_clips],
             "backgrounds": [b.to_dict() for b in self.backgrounds],
             "bgm_tracks": [bgm.to_dict() for bgm in self.bgm_tracks],
@@ -216,6 +218,7 @@ class Project:
         proj.fps = video.get("fps", 30)
         proj.output_path = video.get("output_path", "reading_video.mp4")
         proj.default_interval = data.get("default_interval", 0.5)
+        proj.use_project_settings = data.get("use_project_settings", False)
         
         proj.audio_clips = [AudioClip.from_dict(c) for c in data.get("audio_clips", [])]
         proj.backgrounds = [BackgroundSetting.from_dict(b) for b in data.get("backgrounds", [])]
