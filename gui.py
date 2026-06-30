@@ -196,7 +196,7 @@ class ConfigDialog(QDialog):
         self.project = project
         self.setWindowTitle("アプリ・プロジェクト設定")
         self.resize(500, 520)
-        
+
         # システムフォント一覧の取得
         self.system_fonts = []
         try:
@@ -205,7 +205,7 @@ class ConfigDialog(QDialog):
             pass
         if not self.system_fonts:
             self.system_fonts = ["Yu Gothic", "Yu Mincho", "MS Gothic", "MS Mincho", "Meiryo"]
-            
+
         # デフォルトの明朝体フォントを決定
         self.default_mincho = "Yu Mincho"
         if self.default_mincho not in self.system_fonts:
@@ -214,12 +214,12 @@ class ConfigDialog(QDialog):
                 if alt in self.system_fonts:
                     self.default_mincho = alt
                     break
-            
+
         layout = QVBoxLayout(self)
-        
+
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
-        
+
         # 1. プロジェクト個別設定タブ
         self.proj_tab = QWidget()
         self.build_proj_tab()
@@ -249,14 +249,14 @@ class ConfigDialog(QDialog):
         lay = QVBoxLayout(self.app_tab)
         form = QGridLayout()
         lay.addLayout(form)
-        
+
         form.addWidget(QLabel("デフォルト音声間隔:"), 0, 0)
         self.app_gap_spin = QDoubleSpinBox()
         self.app_gap_spin.setRange(0.0, 60.0)
         self.app_gap_spin.setSuffix("s")
         self.app_gap_spin.setValue(self.app_config.default_interval)
         form.addWidget(self.app_gap_spin, 0, 1)
-        
+
         form.addWidget(QLabel("字幕フォント:"), 1, 0)
         self.app_font_combo = QComboBox()
         self.app_font_combo.addItems(self.system_fonts)
@@ -265,97 +265,97 @@ class ConfigDialog(QDialog):
         else:
             self.app_font_combo.setCurrentText(self.default_mincho)
         form.addWidget(self.app_font_combo, 1, 1)
-        
+
         form.addWidget(QLabel("字幕フォントサイズ:"), 2, 0)
         self.app_font_size = QSpinBox()
         self.app_font_size.setRange(10, 200)
         self.app_font_size.setValue(self.app_config.font_size)
         form.addWidget(self.app_font_size, 2, 1)
-        
+
         form.addWidget(QLabel("字幕表示位置:"), 3, 0)
         self.app_position = QComboBox()
         self.app_position.addItems(["top", "center", "bottom"])
         self.app_position.setCurrentText(self.app_config.position)
         form.addWidget(self.app_position, 3, 1)
-        
+
         form.addWidget(QLabel("字幕文字色:"), 4, 0)
         self.app_text_color = QLineEdit(self.app_config.text_color)
         form.addWidget(self.app_text_color, 4, 1)
-        
+
         form.addWidget(QLabel("背景ボックス色:"), 5, 0)
         self.app_box_color = QLineEdit(self.app_config.box_color)
         form.addWidget(self.app_box_color, 5, 1)
-        
+
         form.addWidget(QLabel("ボックス不透明度:"), 6, 0)
         self.app_box_opacity = QDoubleSpinBox()
         self.app_box_opacity.setRange(0.0, 1.0)
         self.app_box_opacity.setSingleStep(0.1)
         self.app_box_opacity.setValue(self.app_config.box_opacity)
         form.addWidget(self.app_box_opacity, 6, 1)
-        
+
         form.addWidget(QLabel("下マージン:"), 7, 0)
         self.app_margin = QSpinBox()
         self.app_margin.setRange(0, 500)
         self.app_margin.setValue(self.app_config.margin_bottom)
         form.addWidget(self.app_margin, 7, 1)
-        
+
         lay.addStretch()
 
     def build_proj_tab(self):
         lay = QVBoxLayout(self.proj_tab)
-        
+
         self.proj_chk = QCheckBox("このプロジェクトで個別の設定を使用する（アプリ設定を上書き）")
         lay.addWidget(self.proj_chk)
-        
+
         self.proj_form_widget = QWidget()
         self.proj_form = QGridLayout(self.proj_form_widget)
         lay.addWidget(self.proj_form_widget)
-        
+
         self.proj_form.addWidget(QLabel("デフォルト音声間隔:"), 0, 0)
         self.proj_gap_spin = QDoubleSpinBox()
         self.proj_gap_spin.setRange(0.0, 60.0)
         self.proj_gap_spin.setSuffix("s")
         self.proj_form.addWidget(self.proj_gap_spin, 0, 1)
-        
+
         self.proj_form.addWidget(QLabel("字幕フォント:"), 1, 0)
         self.proj_font_combo = QComboBox()
         self.proj_font_combo.addItems(self.system_fonts)
         self.proj_form.addWidget(self.proj_font_combo, 1, 1)
-        
+
         self.proj_form.addWidget(QLabel("字幕フォントサイズ:"), 2, 0)
         self.proj_font_size = QSpinBox()
         self.proj_font_size.setRange(10, 200)
         self.proj_form.addWidget(self.proj_font_size, 2, 1)
-        
+
         self.proj_form.addWidget(QLabel("字幕表示位置:"), 3, 0)
         self.proj_position = QComboBox()
         self.proj_position.addItems(["top", "center", "bottom"])
         self.proj_form.addWidget(self.proj_position, 3, 1)
-        
+
         self.proj_form.addWidget(QLabel("字幕文字色:"), 4, 0)
         self.proj_text_color = QLineEdit()
         self.proj_form.addWidget(self.proj_text_color, 4, 1)
-        
+
         self.proj_form.addWidget(QLabel("背景ボックス色:"), 5, 0)
         self.proj_box_color = QLineEdit()
         self.proj_form.addWidget(self.proj_box_color, 5, 1)
-        
+
         self.proj_form.addWidget(QLabel("ボックス不透明度:"), 6, 0)
         self.proj_box_opacity = QDoubleSpinBox()
         self.proj_box_opacity.setRange(0.0, 1.0)
         self.proj_box_opacity.setSingleStep(0.1)
         self.proj_form.addWidget(self.proj_box_opacity, 6, 1)
-        
+
         self.proj_form.addWidget(QLabel("下マージン:"), 7, 0)
         self.proj_margin = QSpinBox()
         self.proj_margin.setRange(0, 500)
         self.proj_form.addWidget(self.proj_margin, 7, 1)
-        
+
         lay.addStretch()
-        
+
         # 連動設定
         self.proj_chk.toggled.connect(self.on_proj_chk_toggled)
-        
+
         if self.project:
             self.proj_chk.setChecked(self.project.use_project_settings)
             self.proj_gap_spin.setValue(self.project.default_interval)
@@ -370,7 +370,7 @@ class ConfigDialog(QDialog):
             self.proj_box_color.setText(style.box_color)
             self.proj_box_opacity.setValue(style.box_opacity)
             self.proj_margin.setValue(style.margin_bottom)
-            
+
         self.on_proj_chk_toggled(self.proj_chk.isChecked())
 
     def on_proj_chk_toggled(self, checked):
@@ -387,7 +387,7 @@ class ConfigDialog(QDialog):
         self.app_config.box_opacity = self.app_box_opacity.value()
         self.app_config.margin_bottom = self.app_margin.value()
         self.app_config.save()
-        
+
         # 2. プロジェクト個別設定を保存
         if self.project:
             self.project.use_project_settings = self.proj_chk.isChecked()
@@ -402,17 +402,17 @@ class ConfigDialog(QDialog):
                 style.box_opacity = self.proj_box_opacity.value()
                 style.margin_bottom = self.proj_margin.value()
             self.project.save()
-            
+
         self.accept()
 
 class RatioTableWidget(QTableWidget):
     def __init__(self, ratios, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.ratios = ratios
-        
+
         # 垂直ヘッダー(行番号)を非表示にする(白い背景とダブる番号の解消)
         self.verticalHeader().setVisible(False)
-        
+
         # 選択モードをセル選択にし、IDとファイル名のみハイライト制限する
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectItems)
         self.itemSelectionChanged.connect(self.limit_selection_to_id_and_name)
@@ -440,7 +440,7 @@ class RatioTableWidget(QTableWidget):
         selected_rows = set()
         for item in self.selectedItems():
             selected_rows.add(item.row())
-            
+
         self.clearSelection()
         for row in selected_rows:
             item0 = self.item(row, 0)
@@ -453,7 +453,7 @@ class RatioTableWidget(QTableWidget):
 
 class DragDropTableWidget(RatioTableWidget):
     order_changed = Signal(int, int)
-    
+
     def __init__(self, ratios, *args, **kwargs):
         super().__init__(ratios, *args, **kwargs)
         self.setDragEnabled(True)
@@ -467,15 +467,15 @@ class DragDropTableWidget(RatioTableWidget):
         if not src_item:
             return
         src_row = src_item.row()
-        
+
         pos = event.position().toPoint()
         dest_item = self.itemAt(pos)
-        
+
         if dest_item:
             dest_row = dest_item.row()
         else:
             dest_row = self.rowCount() - 1
-            
+
         if src_row != dest_row:
             self.order_changed.emit(src_row, dest_row)
             event.accept()
@@ -530,11 +530,14 @@ class ReadingVideoApp(QMainWindow):
         self.subtitle_timer.setInterval(1000) # 1秒 (1000ms)
         self.subtitle_timer.timeout.connect(self.update_preview_from_timer)
 
-        # 音声プレビュー用のメディアプレイヤー
+        # 音声プレビュー用のメディアプレイヤーと再生状態管理
+        self.active_playback_type = None
+        self.current_audition_bgm = None
         self.media_player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
         self.media_player.setAudioOutput(self.audio_output)
         self.media_player.playbackStateChanged.connect(self.on_playback_state_changed)
+        self.media_player.positionChanged.connect(self.apply_bgm_fade)
 
         self.apply_dark_theme()
         self.build_ui()
@@ -874,6 +877,7 @@ class ReadingVideoApp(QMainWindow):
         self.bg_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.bg_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.bg_table.order_changed.connect(self.on_bg_order_changed)
+        self.bg_table.itemSelectionChanged.connect(self.update_preview)
         bg_layout.addWidget(self.bg_table)
 
         bottom_tabs.addTab(bg_widget, "背景画像")
@@ -888,9 +892,15 @@ class ReadingVideoApp(QMainWindow):
         btn_add_bgm = QPushButton("➕ BGM追加")
         btn_add_bgm.clicked.connect(self.add_bgm)
         bgm_btn_bar.addWidget(btn_add_bgm)
+
         btn_del_bgm = QPushButton("❌ 削除")
         btn_del_bgm.clicked.connect(self.remove_selected_bgm)
         bgm_btn_bar.addWidget(btn_del_bgm)
+
+        self.bgm_play_btn = QPushButton("▶ 試聴")
+        self.bgm_play_btn.setMinimumWidth(150)  # 横幅を2倍程度にして押し間違いを防ぐ
+        self.bgm_play_btn.clicked.connect(self.toggle_play_bgm)
+        bgm_btn_bar.addWidget(self.bgm_play_btn)
         bgm_btn_bar.addStretch()
 
         self.bgm_table = DragDropTableWidget([40, 250, 85, 85, 200, 150, 150, 60, 60], 0, 9)
@@ -898,6 +908,8 @@ class ReadingVideoApp(QMainWindow):
         self.bgm_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.bgm_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.bgm_table.order_changed.connect(self.on_bgm_order_changed)
+        self.bgm_table.itemSelectionChanged.connect(lambda: self.media_player.stop())
+        self.bg_table.itemSelectionChanged.connect(lambda: self.media_player.stop())
         bgm_layout.addWidget(self.bgm_table)
 
         bottom_tabs.addTab(bgm_widget, "BGM / 環境音")
@@ -912,7 +924,7 @@ class ReadingVideoApp(QMainWindow):
         self.log_area.setReadOnly(True)
         self.log_area.setMaximumHeight(120)
         log_group_layout.addWidget(self.log_area)
-        
+
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
@@ -931,7 +943,7 @@ class ReadingVideoApp(QMainWindow):
             }
         """)
         log_group_layout.addWidget(self.progress_bar)
-        
+
         footer_layout.addWidget(log_group, stretch=2)
 
         export_widget = QWidget()
@@ -1051,6 +1063,14 @@ class ReadingVideoApp(QMainWindow):
     def on_clip_selected(self):
         self.media_player.stop() # 試聴停止
         self.subtitle_timer.stop() # 切り替え時にタイマーをキャンセル
+        
+        # 背景テーブルの選択をクリア (音声側プレビューをアサート)
+        if hasattr(self, "bg_table"):
+            self.bg_table.blockSignals(True)
+            self.bg_table.clearSelection()
+            self.bg_table.setCurrentItem(None)
+            self.bg_table.blockSignals(False)
+            
         items = self.clip_list.selectedItems()
         if not items:
             self.selected_clip_id = None
@@ -1484,7 +1504,31 @@ class ReadingVideoApp(QMainWindow):
         self.refresh_bgm_table()
 
     def update_preview(self):
-        if not self.project or not self.selected_clip_id:
+        if not self.project:
+            self.preview_widget.set_pixmap(QPixmap())
+            self.preview_widget.set_text("プロジェクトが選択されていません")
+            return
+
+        # 1. まず背景画像テーブルの選択があるか確認
+        bg_selected = self.bg_table.selectedItems() if hasattr(self, "bg_table") else []
+        if bg_selected:
+            row = bg_selected[0].row()
+            if row < len(self.project.backgrounds):
+                bg_set = self.project.backgrounds[row]
+                img_path = os.path.abspath(os.path.join(self.project.project_dir, bg_set.file_path))
+                if os.path.exists(img_path):
+                    try:
+                        img = Image.open(img_path)
+                        fitted = renderer.fit_cover(img, self.project.width, self.project.height)
+                        pix = pil_to_qpixmap(fitted)
+                        self.preview_widget.set_pixmap(pix)
+                        return
+                    except Exception as e:
+                        self.preview_widget.set_text(f"画像プレビューエラー:\n{e}")
+                        return
+
+        # 2. 音声クリップベースのプレビュー
+        if not self.selected_clip_id:
             self.preview_widget.set_pixmap(QPixmap())
             self.preview_widget.set_text("クリップが選択されていません")
             return
@@ -1622,7 +1666,7 @@ class ReadingVideoApp(QMainWindow):
         if path:
             if not os.path.exists(os.path.join(path, "project.json")):
                 reply = QMessageBox.question(
-                    self, "確認", "指定フォルダに project.json がありません。新規作成しますか？",
+                    self, "確認", "指定フォルダに プロジェクトデータ がありません。新規作成しますか？",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                 )
                 if reply == QMessageBox.StandardButton.No:
@@ -1700,22 +1744,90 @@ class ReadingVideoApp(QMainWindow):
         if self.media_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.media_player.stop()
         else:
+            self.active_playback_type = "clip"
             clip_abspath = os.path.abspath(os.path.join(self.project.project_dir, clip.file_path))
             if not os.path.exists(clip_abspath):
                 QMessageBox.warning(self, "警告", "音声ファイルが見つかりません。")
                 return
 
-            self.audio_output.setVolume(clip.volume)
+            # QAudioOutputは1.0が最大のため、clip.volume(0.0〜2.0)を0.5倍にスケーリングして等倍とブーストの差が出るようにします
+            self.audio_output.setVolume(min(1.0, max(0.0, clip.volume * 0.5)))
             self.media_player.setSource(QUrl.fromLocalFile(clip_abspath))
             self.media_player.play()
 
+    def toggle_play_bgm(self):
+        if not self.project:
+            return
+        sel = self.bgm_table.selectedItems()
+        if not sel:
+            QMessageBox.warning(self, "警告", "試聴するBGMトラックを選択してください。")
+            return
+        row = sel[0].row()
+        if row >= len(self.project.bgm_tracks):
+            return
+        bgm = self.project.bgm_tracks[row]
+
+        if self.media_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.media_player.stop()
+            self.current_audition_bgm = None
+        else:
+            self.active_playback_type = "bgm"
+            self.current_audition_bgm = bgm
+            bgm_abspath = os.path.abspath(os.path.join(self.project.project_dir, bgm.file_path))
+            if not os.path.exists(bgm_abspath):
+                QMessageBox.warning(self, "警告", "BGMファイルが見つかりません。")
+                return
+
+            # 初期音量をセット(フェードインがある場合は0から開始)
+            initial_vol = 0.0 if bgm.fade_in > 0 else bgm.volume * 0.5
+            self.audio_output.setVolume(initial_vol)
+
+            self.media_player.setSource(QUrl.fromLocalFile(bgm_abspath))
+            self.media_player.play()
+
+    def apply_bgm_fade(self, position_ms):
+        if self.active_playback_type != "bgm" or not self.current_audition_bgm:
+            return
+
+        bgm = self.current_audition_bgm
+        duration_ms = self.media_player.duration()
+        if duration_ms <= 0:
+            return
+
+        t = position_ms / 1000.0
+        dur = duration_ms / 1000.0
+
+        ratio = 1.0
+
+        # 1. フェードイン領域
+        if bgm.fade_in > 0 and t < bgm.fade_in:
+            ratio = t / bgm.fade_in
+
+        # 2. フェードアウト領域
+        if bgm.fade_out > 0 and t > (dur - bgm.fade_out):
+            time_left = dur - t
+            ratio = min(ratio, time_left / bgm.fade_out)
+
+        ratio = min(1.0, max(0.0, ratio))
+        target_vol = min(1.0, max(0.0, bgm.volume * 0.5 * ratio))
+        self.audio_output.setVolume(target_vol)
+
     def on_playback_state_changed(self, state):
-        if state == QMediaPlayer.PlaybackState.PlayingState:
-            self.play_btn.setText("■ 停止")
-            self.play_btn.setStyleSheet("background-color: #5a2a2a; font-weight: bold; color: #ffffff;")
+        is_playing = (state == QMediaPlayer.PlaybackState.PlayingState)
+        if is_playing:
+            if self.active_playback_type == "clip":
+                self.play_btn.setText("■ 停止")
+                self.play_btn.setStyleSheet("background-color: #5a2a2a; font-weight: bold; color: #ffffff;")
+            elif self.active_playback_type == "bgm":
+                self.bgm_play_btn.setText("■ 停止")
+                self.bgm_play_btn.setStyleSheet("background-color: #5a2a2a; font-weight: bold; color: #ffffff;")
         else:
             self.play_btn.setText("▶ 試聴")
             self.play_btn.setStyleSheet("")
+            self.bgm_play_btn.setText("▶ 試聴")
+            self.bgm_play_btn.setStyleSheet("")
+            self.active_playback_type = None
+            self.current_audition_bgm = None
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

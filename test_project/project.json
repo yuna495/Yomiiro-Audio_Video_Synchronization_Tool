@@ -94,6 +94,18 @@
       "fade_out": 3.0,
       "loop": true,
       "enabled": true
+    },
+    {
+      "id": "bgm_0001",
+      "file_path": "bgm/bgm_0001.wav",
+      "display_name": "001_暁記ミタマ（ノーマル）_げっか。.wav",
+      "start_clip_id": "clip_0003",
+      "end_clip_id": "clip_0003",
+      "volume": 1.0,
+      "fade_in": 1.0,
+      "fade_out": 3.0,
+      "loop": true,
+      "enabled": true
     }
   ],
   "subtitle_style": {
