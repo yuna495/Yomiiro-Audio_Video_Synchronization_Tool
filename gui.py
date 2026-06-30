@@ -436,11 +436,34 @@ class RatioTableWidget(QTableWidget):
             super().mousePressEvent(event)
 
     def limit_selection_to_id_and_name(self):
-        self.blockSignals(True)
-        selected_rows = set()
-        for item in self.selectedItems():
-            selected_rows.add(item.row())
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._do_limit_selection)
 
+    def _do_limit_selection(self):
+        # 既にID(0)とファイル名(1)のみが正しく選択されている場合は、無限登録ループを防ぐため処理をスルー
+        selected_items = self.selectedItems()
+        if not selected_items:
+            return
+
+        selected_rows = set()
+        already_limited = True
+        for item in selected_items:
+            selected_rows.add(item.row())
+            if item.column() not in (0, 1):
+                already_limited = False
+
+        if already_limited:
+            all_ok = True
+            for row in selected_rows:
+                i0 = self.item(row, 0)
+                i1 = self.item(row, 1)
+                if not (i0 and i0.isSelected() and i1 and i1.isSelected()):
+                    all_ok = False
+                    break
+            if all_ok:
+                return # 無限再帰を遮断
+
+        self.blockSignals(True)
         self.clearSelection()
         for row in selected_rows:
             item0 = self.item(row, 0)
@@ -450,6 +473,7 @@ class RatioTableWidget(QTableWidget):
             if item1:
                 item1.setSelected(True)
         self.blockSignals(False)
+        self.itemSelectionChanged.emit()
 
 class DragDropTableWidget(RatioTableWidget):
     order_changed = Signal(int, int)
@@ -639,16 +663,16 @@ class ReadingVideoApp(QMainWindow):
                 border-radius: 4px;
                 gridline-color: #404040;
             }
-            QListWidget::item:selected {
-                background-color: #2a5a2a;
+            QListWidget::item:selected, QTableWidget::item:selected {
+                background-color: #3a7a3a;
                 color: #ffffff;
             }
-            QListWidget::item:selected:active {
-                background-color: #2a5a2a;
+            QListWidget::item:selected:active, QTableWidget::item:selected:active {
+                background-color: #3a7a3a;
                 color: #ffffff;
             }
-            QListWidget::item:selected:!active {
-                background-color: #2a5a2a;
+            QListWidget::item:selected:!active, QTableWidget::item:selected:!active {
+                background-color: #3a7a3a;
                 color: #ffffff;
             }
             QHeaderView::section {
