@@ -8,6 +8,7 @@
     "output_path": "reading_video.mp4"
   },
   "default_interval": 0.5,
+  "use_project_settings": true,
   "audio_clips": [
     {
       "id": "clip_0001",
@@ -96,14 +97,14 @@
     }
   ],
   "subtitle_style": {
-    "font_family": "Yu Gothic",
+    "font_family": "Honoka Shin Mincho L",
     "font_size": 58,
     "text_color": "#EEF1F8",
     "shadow_color": "#000000",
     "box_color": "#000000",
     "box_opacity": 0.5,
     "position": "bottom",
-    "margin_bottom": 100,
+    "margin_bottom": 95,
     "max_width": 1500,
     "line_spacing": 16
   }

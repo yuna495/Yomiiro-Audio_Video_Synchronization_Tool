@@ -9,10 +9,10 @@ from PySide6.QtWidgets import (
     QPushButton, QTextEdit, QLineEdit, QSlider, QCheckBox, QGroupBox,
     QSpinBox, QDoubleSpinBox, QComboBox, QTabWidget, QTableWidget,
     QTableWidgetItem, QHeaderView, QFileDialog, QMessageBox, QDialog,
-    QDialogButtonBox, QSizePolicy
+    QDialogButtonBox, QSizePolicy, QProgressBar
 )
 from PySide6.QtCore import Qt, QThread, Signal, QObject
-from PySide6.QtGui import QImage, QPixmap, QFont, QIcon, QPainter
+from PySide6.QtGui import QImage, QPixmap, QFont, QIcon, QPainter, QShortcut, QKeySequence
 
 import core
 import renderer
@@ -467,6 +467,10 @@ class ReadingVideoApp(QMainWindow):
         self.project = core.Project(temp_dir)
         self.update_project_ui()
 
+        # ショートカットキーの登録 (Ctrl+S で保存)
+        self.save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        self.save_shortcut.activated.connect(self.save_project)
+
     def apply_dark_theme(self):
         self.setStyleSheet("""
             QWidget {
@@ -825,6 +829,26 @@ class ReadingVideoApp(QMainWindow):
         self.log_area.setReadOnly(True)
         self.log_area.setMaximumHeight(120)
         log_group_layout.addWidget(self.log_area)
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #404040;
+                border-radius: 4px;
+                text-align: center;
+                background-color: #2d2d2d;
+                color: #ffffff;
+            }
+            QProgressBar::chunk {
+                background-color: #2a5a2a;
+                width: 10px;
+            }
+        """)
+        log_group_layout.addWidget(self.progress_bar)
+        
         footer_layout.addWidget(log_group, stretch=2)
 
         export_widget = QWidget()
@@ -1413,7 +1437,15 @@ class ReadingVideoApp(QMainWindow):
     # ログ出力・動画生成スレッド
     # ------------------
     def log_write(self, msg):
-        self.log_area.append(str(msg))
+        msg_str = str(msg)
+        if msg_str.startswith("PROGRESS:"):
+            try:
+                val = int(msg_str.split(":")[1])
+                self.progress_bar.setValue(val)
+            except Exception:
+                pass
+        else:
+            self.log_area.append(msg_str)
 
     def start_generation(self):
         if not self.project:
@@ -1435,6 +1467,7 @@ class ReadingVideoApp(QMainWindow):
         self.gen_btn.setText("⏳ 動画生成中...")
         self.open_folder_btn.setEnabled(False)
         self.log_area.clear()
+        self.progress_bar.setValue(0)
 
         # レンダリング前に設定の同期を確認
         self.sync_project_settings()
@@ -1456,6 +1489,7 @@ class ReadingVideoApp(QMainWindow):
         self.is_generating = False
         self.gen_btn.setEnabled(True)
         self.gen_btn.setText("🎬 動画生成を開始")
+        self.progress_bar.setValue(100 if success else 0)
 
         if success:
             self.open_folder_btn.setEnabled(True)

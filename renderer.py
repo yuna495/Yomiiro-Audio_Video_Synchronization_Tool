@@ -12,26 +12,35 @@ import winreg
 
 def get_system_font_paths():
     font_map = {}
-    fonts_dir = os.path.join(os.environ.get("SystemRoot", "C:\\Windows"), "Fonts")
-    key_path = r"Software\Microsoft\Windows NT\CurrentVersion\Fonts"
-    try:
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
-            for i in range(5000):
-                try:
-                    name, value, _ = winreg.EnumValue(key, i)
-                    family = name.split(" (")[0]
-                    families = [f.strip() for f in family.split("&")]
-                    if not os.path.isabs(value):
-                        full_path = os.path.join(fonts_dir, value)
-                    else:
-                        full_path = value
-                    if os.path.exists(full_path):
-                        for f in families:
-                            font_map[f] = full_path
-                except OSError:
-                    break
-    except Exception:
-        pass
+    system_fonts_dir = os.path.join(os.environ.get("SystemRoot", "C:\\Windows"), "Fonts")
+    user_fonts_dir = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft\\Windows\\Fonts")
+    
+    targets = [
+        (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows NT\CurrentVersion\Fonts"),
+        (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows NT\CurrentVersion\Fonts")
+    ]
+    
+    for hkey, subkey in targets:
+        try:
+            with winreg.OpenKey(hkey, subkey) as key:
+                for i in range(10000):
+                    try:
+                        name, value, _ = winreg.EnumValue(key, i)
+                        family = name.split(" (")[0]
+                        families = [f.strip() for f in family.split("&")]
+                        if not os.path.isabs(value):
+                            full_path = os.path.join(user_fonts_dir, value)
+                            if not os.path.exists(full_path):
+                                full_path = os.path.join(system_fonts_dir, value)
+                        else:
+                            full_path = value
+                        if os.path.exists(full_path):
+                            for f in families:
+                                font_map[f] = full_path
+                    except OSError:
+                        break
+        except Exception:
+            pass
     return font_map
 
 def find_font(font_family=None):
@@ -274,7 +283,6 @@ def render_movie(project: Project, log_callback=print):
         raise ValueError("有効な音声クリップがありません。")
         
     font_path = find_font(project.subtitle_style.font_family)
-    log_callback(f"フォントファイル: {font_path}")
     
     temp_voice_wav = os.path.join(project.project_dir, "temp_voice_combined.wav")
     temp_video_no_audio = os.path.join(project.project_dir, "temp_video_no_audio.mp4")
@@ -419,7 +427,7 @@ def render_movie(project: Project, log_callback=print):
             
             if (f_idx + 1) % max(1, total_frames // 20) == 0:
                 percent = int((f_idx + 1) / total_frames * 100)
-                log_callback(f"映像書き出し中... {percent}%")
+                log_callback(f"PROGRESS:{percent}")
     finally:
         writer.close()
         
