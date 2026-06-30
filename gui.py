@@ -524,15 +524,25 @@ class RenderWorker(QObject):
     def __init__(self, project):
         super().__init__()
         self.project = project
+        self.cancel_requested = False
+
+    def cancel(self):
+        self.cancel_requested = True
 
     def run(self):
         try:
-            output = renderer.render_movie(self.project, log_callback=self.log_signal.emit)
+            output = renderer.render_movie(
+                self.project,
+                log_callback=self.log_signal.emit,
+                cancel_callback=lambda: self.cancel_requested
+            )
             self.finished_signal.emit(True, output)
+        except renderer.RenderCancelled as e:
+            self.finished_signal.emit(False, str(e))
         except Exception as e:
             import traceback
-            tb = traceback.format_exc()
-            self.finished_signal.emit(False, f"{e}\n{tb}")
+            print(traceback.format_exc())
+            self.finished_signal.emit(False, str(e) or "動画生成中にエラーが発生しました。")
 
 class ReadingVideoApp(QMainWindow):
     def __init__(self):
@@ -547,6 +557,7 @@ class ReadingVideoApp(QMainWindow):
         self.thread = None
         self.worker = None
         self.app_config = AppConfig()
+        self.preview_cache = {}
 
         # 字幕テキスト入力遅延プレビュー更新タイマー
         self.subtitle_timer = QTimer(self)
@@ -1481,14 +1492,20 @@ class ReadingVideoApp(QMainWindow):
             "Audio Files (*.wav *.mp3 *.m4a *.aac *.ogg *.flac)"
         )
         if files:
+            errors = []
             for f in files:
-                self.project.add_audio_clip(f, self.log_write)
+                try:
+                    self.project.add_audio_clip(f, self.log_write)
+                except Exception as e:
+                    errors.append(f"{os.path.basename(f)}: {e}")
             self.renumber_clips()
             self.refresh_clip_list()
             self.refresh_bg_table()
             self.refresh_bgm_table()
             self.update_preview()
             self.project.save()
+            if errors:
+                QMessageBox.critical(self, "音声追加エラー", "\n".join(errors))
 
     def remove_selected_clip(self):
         if not self.selected_clip_id or not self.project:
@@ -1532,6 +1549,57 @@ class ReadingVideoApp(QMainWindow):
         self.refresh_bg_table()
         self.refresh_bgm_table()
 
+    def clear_preview_cache(self):
+        self.preview_cache.clear()
+
+    def cache_preview_pixmap(self, key, pixmap):
+        if len(self.preview_cache) >= 32:
+            oldest_key = next(iter(self.preview_cache))
+            self.preview_cache.pop(oldest_key, None)
+        self.preview_cache[key] = pixmap
+
+    def file_stamp(self, path):
+        try:
+            stat = os.stat(path)
+            return (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            return None
+
+    def subtitle_style_key(self):
+        style = self.project.subtitle_style
+        return (
+            style.font_family,
+            style.font_size,
+            style.text_color,
+            style.shadow_color,
+            style.box_color,
+            style.box_opacity,
+            style.position,
+            style.margin_bottom,
+            style.max_width,
+            style.line_spacing,
+        )
+
+    def preview_background_key(self):
+        bg_key = []
+        for bg_set in self.project.backgrounds:
+            try:
+                path = core.resolve_asset_path(self.project.project_dir, bg_set.file_path, "images", core.IMAGE_EXTS)
+                stamp = self.file_stamp(path)
+            except Exception:
+                stamp = None
+            bg_key.append((
+                bg_set.id,
+                bg_set.file_path,
+                bg_set.start_clip_id,
+                bg_set.end_clip_id,
+                bg_set.enabled,
+                bg_set.transition_type,
+                bg_set.transition_duration,
+                stamp,
+            ))
+        return tuple(bg_key)
+
     def update_preview(self):
         if not self.project:
             self.preview_widget.set_pixmap(QPixmap())
@@ -1546,10 +1614,24 @@ class ReadingVideoApp(QMainWindow):
                 bg_set = self.project.backgrounds[row]
                 img_path = core.resolve_asset_path(self.project.project_dir, bg_set.file_path, "images", core.IMAGE_EXTS)
                 if os.path.exists(img_path):
+                    key = (
+                        "bg",
+                        self.project.project_dir,
+                        bg_set.id,
+                        bg_set.file_path,
+                        self.file_stamp(img_path),
+                        self.project.width,
+                        self.project.height,
+                    )
+                    cached = self.preview_cache.get(key)
+                    if cached is not None:
+                        self.preview_widget.set_pixmap(cached)
+                        return
                     try:
                         img = Image.open(img_path)
                         fitted = renderer.fit_cover(img, self.project.width, self.project.height)
                         pix = pil_to_qpixmap(fitted)
+                        self.cache_preview_pixmap(key, pix)
                         self.preview_widget.set_pixmap(pix)
                         return
                     except Exception as e:
@@ -1563,8 +1645,28 @@ class ReadingVideoApp(QMainWindow):
             return
 
         try:
+            target_clip = next((c for c in self.project.audio_clips if c.id == self.selected_clip_id), None)
+            clip_key = None
+            if target_clip:
+                clip_key = (
+                    "clip",
+                    self.project.project_dir,
+                    self.selected_clip_id,
+                    target_clip.subtitle,
+                    target_clip.enabled,
+                    self.project.width,
+                    self.project.height,
+                    self.subtitle_style_key(),
+                    self.preview_background_key(),
+                )
+                cached = self.preview_cache.get(clip_key)
+                if cached is not None:
+                    self.preview_widget.set_pixmap(cached)
+                    return
             preview_img = renderer.generate_preview_image(self.project, self.selected_clip_id)
             pix = pil_to_qpixmap(preview_img)
+            if clip_key is not None:
+                self.cache_preview_pixmap(clip_key, pix)
             self.preview_widget.set_pixmap(pix)
         except Exception as e:
             self.preview_widget.set_text(f"プレビューエラー:\n{e}")
@@ -1614,6 +1716,7 @@ class ReadingVideoApp(QMainWindow):
         if not self.project:
             return
         if self.is_generating:
+            self.cancel_generation()
             return
 
         enabled_clips = [c for c in self.project.audio_clips if c.enabled]
@@ -1636,8 +1739,8 @@ class ReadingVideoApp(QMainWindow):
             return
 
         self.is_generating = True
-        self.gen_btn.setEnabled(False)
-        self.gen_btn.setText("⏳ 動画生成中...")
+        self.gen_btn.setEnabled(True)
+        self.gen_btn.setText("キャンセル")
         self.open_folder_btn.setEnabled(False)
         self.log_area.clear()
         self.progress_bar.setValue(0)
@@ -1655,9 +1758,18 @@ class ReadingVideoApp(QMainWindow):
 
         self.thread.start()
 
+    def cancel_generation(self):
+        if self.worker:
+            self.worker.cancel()
+        self.gen_btn.setEnabled(False)
+        self.gen_btn.setText("キャンセル中...")
+        self.log_write("動画生成のキャンセルを要求しました。")
+
     def on_generation_finished(self, success, result_msg):
         self.thread.quit()
         self.thread.wait()
+        self.thread = None
+        self.worker = None
 
         self.is_generating = False
         self.gen_btn.setEnabled(True)
@@ -1667,6 +1779,9 @@ class ReadingVideoApp(QMainWindow):
         if success:
             self.open_folder_btn.setEnabled(True)
             QMessageBox.information(self, "完了", f"動画生成が完了しました！\n出力先: {result_msg}")
+        elif "キャンセル" in result_msg:
+            self.open_folder_btn.setEnabled(os.path.exists(self.project.get_output_abspath()))
+            QMessageBox.information(self, "キャンセル", result_msg)
         else:
             self.open_folder_btn.setEnabled(os.path.exists(self.project.get_output_abspath()))
             QMessageBox.critical(self, "エラー", f"動画生成に失敗しました:\n{result_msg}")
@@ -1687,8 +1802,13 @@ class ReadingVideoApp(QMainWindow):
 
     def closeEvent(self, event):
         if self.thread and self.thread.isRunning():
+            if self.worker:
+                self.worker.cancel()
             self.thread.quit()
-            self.thread.wait()
+            if not self.thread.wait(3000):
+                QMessageBox.information(self, "キャンセル中", "動画生成のキャンセル処理中です。完了後にもう一度閉じてください。")
+                event.ignore()
+                return
         event.accept()
 
     def new_project(self):
@@ -1697,6 +1817,7 @@ class ReadingVideoApp(QMainWindow):
             self.project = core.Project(path)
             self.project.save()
             self.selected_clip_id = None
+            self.clear_preview_cache()
             self.update_project_ui()
             self.log_write(f"新規プロジェクトを作成しました: {path}")
 
@@ -1712,6 +1833,7 @@ class ReadingVideoApp(QMainWindow):
                     return
             self.project = core.Project.load(path)
             self.selected_clip_id = None
+            self.clear_preview_cache()
             self.update_project_ui()
             self.log_write(f"プロジェクトをロードしました: {path}")
 

@@ -2,6 +2,7 @@ import os
 import wave
 import math
 import subprocess
+import time
 import numpy as np
 import imageio.v2 as imageio
 import imageio_ffmpeg
@@ -19,6 +20,40 @@ from core import (
 )
 
 import winreg
+
+
+class RenderCancelled(Exception):
+    pass
+
+
+def _check_cancel(cancel_callback):
+    if cancel_callback and cancel_callback():
+        raise RenderCancelled("動画生成をキャンセルしました。")
+
+
+def _run_ffmpeg(cmd, cancel_callback=None):
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        while True:
+            ret = proc.poll()
+            if ret is not None:
+                if ret != 0:
+                    raise subprocess.CalledProcessError(ret, cmd)
+                return
+            if cancel_callback and cancel_callback():
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                raise RenderCancelled("動画生成をキャンセルしました。")
+            time.sleep(0.1)
+    except Exception:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        raise
 
 def get_system_font_paths():
     font_map = {}
@@ -292,8 +327,9 @@ def generate_preview_image(project: Project, clip_id: str):
             
     return frame.convert("RGB")
 
-def render_movie(project: Project, log_callback=print):
+def render_movie(project: Project, log_callback=print, cancel_callback=None):
     log_callback("動画レンダリングパラメータの計算中...")
+    _check_cancel(cancel_callback)
     timeline = VideoTimeline(project)
     
     if not timeline.clips_timeline:
@@ -304,6 +340,18 @@ def render_movie(project: Project, log_callback=print):
     temp_voice_wav = os.path.join(project.project_dir, "temp_voice_combined.wav")
     temp_video_no_audio = os.path.join(project.project_dir, "temp_video_no_audio.mp4")
     output_mp4 = project.get_output_abspath()
+
+    def cleanup_temp_files():
+        for f in [temp_voice_wav, temp_video_no_audio]:
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
+
+    def check_cancel():
+        if cancel_callback and cancel_callback():
+            raise RenderCancelled("動画生成をキャンセルしました。")
     
     # 1. 音声ファイルの連結
     log_callback("音声ファイルを連結中...")
@@ -314,30 +362,33 @@ def render_movie(project: Project, log_callback=print):
         sampwidth = params.sampwidth
         framerate = params.framerate
         
-    with wave.open(temp_voice_wav, "wb") as out:
-        out.setparams(params)
-        for idx, entry in enumerate(timeline.clips_timeline):
-            clip = entry["clip"]
-            clip_abspath = resolve_asset_path(project.project_dir, clip.file_path, "audio", AUDIO_EXTS)
-        
-            with wave.open(clip_abspath, "rb") as wf:
-                data = wf.readframes(wf.getnframes())
-            # クリップごとの音量を調整（必要なら）
-            if clip.volume != 1.0:
-                dtype = np.int16 if sampwidth == 2 else np.uint8
-                arr = np.frombuffer(data, dtype=dtype).astype(np.float32)
-                arr *= clip.volume
-                arr = np.clip(arr, np.iinfo(dtype).min, np.iinfo(dtype).max).astype(dtype)
-                data = arr.tobytes()
-            out.writeframes(data)
-            
-        # gap_after（無音）の挿入
-            gap = clip.gap_after if idx < len(timeline.clips_timeline) - 1 else 5.0
-            if gap > 0:
-                silence_frames = int(gap * framerate)
-                silence_bytes = b"\x00" * silence_frames * nchannels * sampwidth
-                out.writeframes(silence_bytes)
-            
+    try:
+        with wave.open(temp_voice_wav, "wb") as out:
+            out.setparams(params)
+            for idx, entry in enumerate(timeline.clips_timeline):
+                check_cancel()
+                clip = entry["clip"]
+                clip_abspath = resolve_asset_path(project.project_dir, clip.file_path, "audio", AUDIO_EXTS)
+
+                with wave.open(clip_abspath, "rb") as wf:
+                    data = wf.readframes(wf.getnframes())
+                if clip.volume != 1.0:
+                    dtype = np.int16 if sampwidth == 2 else np.uint8
+                    arr = np.frombuffer(data, dtype=dtype).astype(np.float32)
+                    arr *= clip.volume
+                    arr = np.clip(arr, np.iinfo(dtype).min, np.iinfo(dtype).max).astype(dtype)
+                    data = arr.tobytes()
+                out.writeframes(data)
+
+                gap = clip.gap_after if idx < len(timeline.clips_timeline) - 1 else 5.0
+                if gap > 0:
+                    silence_frames = int(gap * framerate)
+                    silence_bytes = b"\x00" * silence_frames * nchannels * sampwidth
+                    out.writeframes(silence_bytes)
+    except RenderCancelled:
+        cleanup_temp_files()
+        raise
+
         
     # 2. 映像フレームの生成
     log_callback("映像レンダリングを開始します...")
@@ -450,8 +501,11 @@ def render_movie(project: Project, log_callback=print):
     active_bg_set = None
     active_clip_idx = 0
     
+    cancelled = False
     try:
         for f_idx in range(total_frames):
+            if f_idx % max(1, project.fps) == 0:
+                check_cancel()
             t = f_idx / project.fps
             
             # 背景の取得と合成
@@ -471,7 +525,6 @@ def render_movie(project: Project, log_callback=print):
                 else:
                     frame = bg_img.copy()
             else:
-                frame = Image.new("RGBA", (project.width, project.height), (0, 0, 0, 255))
                 # 背景が無い場合は黒
                 frame = Image.new("RGBA", (project.width, project.height), (0, 0, 0, 255))
                 
@@ -511,10 +564,18 @@ def render_movie(project: Project, log_callback=print):
             if (f_idx + 1) % max(1, total_frames // 20) == 0:
                 percent = int((f_idx + 1) / total_frames * 100)
                 log_callback(f"PROGRESS:{percent}")
+    except RenderCancelled:
+        cancelled = True
+        raise
     finally:
         writer.close()
+        if cancelled:
+            cleanup_temp_files()
         
     # 3. 音声とBGMの合成
+    if cancel_callback and cancel_callback():
+        cleanup_temp_files()
+        raise RenderCancelled("動画生成をキャンセルしました。")
     log_callback("音声とBGMを最終動画へマージ中...")
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     
@@ -584,7 +645,7 @@ def render_movie(project: Project, log_callback=print):
     ])
     
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _run_ffmpeg(cmd, cancel_callback=cancel_callback)
         log_callback(f"動画の出力が完了しました！ -> {output_mp4}")
     finally:
         # 一時ファイルの削除

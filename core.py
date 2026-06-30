@@ -379,10 +379,16 @@ class Project:
         ]
 
         try:
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, errors="replace")
         except Exception as e:
-            log_callback(f"FFmpegによる変換に失敗したため、直接コピーを試みます: {e}")
-            shutil.copy2(src_path, dest_path)
+            if os.path.exists(dest_path):
+                try:
+                    os.remove(dest_path)
+                except Exception:
+                    pass
+            detail = (getattr(e, "stderr", "") or "").strip().splitlines()
+            msg = detail[-1] if detail else str(e)
+            raise RuntimeError(f"音声ファイルの変換に失敗しました: {os.path.basename(src_path)} ({msg})") from e
 
         display_name = os.path.basename(src_path)
         clip = AudioClip(clip_id, f"audio/{dest_filename}", display_name, gap_after=self.default_interval)
