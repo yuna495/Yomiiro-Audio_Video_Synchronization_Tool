@@ -1,0 +1,107 @@
+{
+  "app_version": "0.1.0",
+  "project_name": "新規プロジェクト",
+  "video": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "output_path": "reading_video.mp4"
+  },
+  "default_interval": 0.5,
+  "audio_clips": [
+    {
+      "id": "clip_0001",
+      "file_path": "audio/clip_0001.wav",
+      "display_name": "001_暁記ミタマ（ノーマル）_げっか。.wav",
+      "subtitle": "げっか",
+      "gap_after": 0.5,
+      "volume": 1.0,
+      "enabled": true
+    },
+    {
+      "id": "clip_0002",
+      "file_path": "audio/clip_0002.wav",
+      "display_name": "002_暁記ミタマ（ノーマル）_作、白蛇。.wav",
+      "subtitle": "作　白蛇",
+      "gap_after": 0.5,
+      "volume": 1.0,
+      "enabled": true
+    },
+    {
+      "id": "clip_0003",
+      "file_path": "audio/clip_0003.wav",
+      "display_name": "003_暁記ミタマ（ノーマル）_風が頬を撫でた。.wav",
+      "subtitle": "風が",
+      "gap_after": 0.5,
+      "volume": 1.0,
+      "enabled": true
+    },
+    {
+      "id": "clip_0004",
+      "file_path": "audio/clip_0004.wav",
+      "display_name": "004_暁記ミタマ（ノーマル）_川泥と古香の混じっ….wav",
+      "subtitle": "川泥と",
+      "gap_after": 0.5,
+      "volume": 1.0,
+      "enabled": true
+    },
+    {
+      "id": "clip_0005",
+      "file_path": "audio/clip_0005.wav",
+      "display_name": "005_暁記ミタマ（ノーマル）_少しだけ肩を竦め、….wav",
+      "subtitle": "少しだけ",
+      "gap_after": 0.5,
+      "volume": 1.0,
+      "enabled": true
+    }
+  ],
+  "backgrounds": [
+    {
+      "id": "bg_0001",
+      "file_path": "images/bg_0001.png",
+      "start_clip_id": "clip_0001",
+      "end_clip_id": "clip_0005",
+      "enabled": true,
+      "transition": {
+        "type": "fade",
+        "duration": 0.8
+      }
+    },
+    {
+      "id": "bg_0002",
+      "file_path": "images/bg_0002.png",
+      "start_clip_id": "clip_0001",
+      "end_clip_id": "clip_0005",
+      "enabled": true,
+      "transition": {
+        "type": "fade",
+        "duration": 0.8
+      }
+    }
+  ],
+  "bgm_tracks": [
+    {
+      "id": "bgm_0001",
+      "file_path": "bgm/bgm_0001.wav",
+      "start_clip_id": "clip_0001",
+      "end_clip_id": "clip_0005",
+      "volume": 0.13,
+      "fade_in": 1.0,
+      "fade_out": 3.0,
+      "loop": true,
+      "enabled": true
+    }
+  ],
+  "subtitle_style": {
+    "font_family": "Yu Gothic",
+    "font_size": 58,
+    "text_color": "#EEF1F8",
+    "shadow_color": "#000000",
+    "box_color": "#000000",
+    "box_opacity": 0.5,
+    "position": "bottom",
+    "margin_bottom": 100,
+    "max_width": 1500,
+    "line_spacing": 16
+  }
+}
