@@ -102,8 +102,8 @@
       "start_clip_id": "clip_0003",
       "end_clip_id": "clip_0003",
       "volume": 2.0,
-      "fade_in": 1.0,
-      "fade_out": 3.0,
+      "fade_in": 0.0,
+      "fade_out": 0.0,
       "loop": true,
       "enabled": true
     }

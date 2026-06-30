@@ -6,7 +6,17 @@ import numpy as np
 import imageio.v2 as imageio
 import imageio_ffmpeg
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-from core import Project, AudioClip, BackgroundSetting, BgmSetting, SubtitleStyle
+from core import (
+    AUDIO_EXTS,
+    BGM_EXTS,
+    IMAGE_EXTS,
+    Project,
+    AudioClip,
+    BackgroundSetting,
+    BgmSetting,
+    SubtitleStyle,
+    resolve_asset_path,
+)
 
 import winreg
 
@@ -133,11 +143,10 @@ def wrap_text_japanese(text, font, max_width):
         lines.append(current)
     return lines
 
-def draw_subtitle_on_frame(frame, text, style, font, width, height):
+def build_subtitle_overlay(text, style, font, width, height):
     if not text:
-        return frame
-    
-    frame = frame.convert("RGBA")
+        return None
+
     overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     
@@ -185,8 +194,16 @@ def draw_subtitle_on_frame(frame, text, style, font, width, height):
         draw.text((x + 3, y + 3), line, font=font, fill=shadow_color_rgba)
         draw.text((x, y), line, font=font, fill=text_color_rgba)
         y += line_h + style.line_spacing
-        
-    return Image.alpha_composite(frame, overlay)
+
+    return overlay
+
+
+def draw_subtitle_on_frame(frame, text, style, font, width, height):
+    overlay = build_subtitle_overlay(text, style, font, width, height)
+    if overlay is None:
+        return frame
+
+    return Image.alpha_composite(frame.convert("RGBA"), overlay)
 
 class VideoTimeline:
     def __init__(self, project: Project):
@@ -200,7 +217,7 @@ class VideoTimeline:
         enabled_clips = [c for c in self.project.audio_clips if c.enabled]
         
         for idx, clip in enumerate(enabled_clips):
-            abspath = os.path.abspath(os.path.join(self.project.project_dir, clip.file_path))
+            abspath = resolve_asset_path(self.project.project_dir, clip.file_path, "audio", AUDIO_EXTS)
             dur = get_wav_duration(abspath)
             
             start = current_time
@@ -246,7 +263,7 @@ def generate_preview_image(project: Project, clip_id: str):
             end_times = timeline.get_clip_times(bg_set.end_clip_id)
             if start_times and end_times:
                 if start_times[0] <= start_time < end_times[2]:
-                    bg_image_path = os.path.abspath(os.path.join(project.project_dir, bg_set.file_path))
+                    bg_image_path = resolve_asset_path(project.project_dir, bg_set.file_path, "images", IMAGE_EXTS)
                     break
                     
     # 画像生成
@@ -290,40 +307,37 @@ def render_movie(project: Project, log_callback=print):
     
     # 1. 音声ファイルの連結
     log_callback("音声ファイルを連結中...")
-    first_clip_path = os.path.abspath(os.path.join(project.project_dir, timeline.clips_timeline[0]["clip"].file_path))
+    first_clip_path = resolve_asset_path(project.project_dir, timeline.clips_timeline[0]["clip"].file_path, "audio", AUDIO_EXTS)
     with wave.open(first_clip_path, "rb") as wf:
         params = wf.getparams()
         nchannels = params.nchannels
         sampwidth = params.sampwidth
         framerate = params.framerate
         
-    audio_segments = []
-    for idx, entry in enumerate(timeline.clips_timeline):
-        clip = entry["clip"]
-        clip_abspath = os.path.abspath(os.path.join(project.project_dir, clip.file_path))
+    with wave.open(temp_voice_wav, "wb") as out:
+        out.setparams(params)
+        for idx, entry in enumerate(timeline.clips_timeline):
+            clip = entry["clip"]
+            clip_abspath = resolve_asset_path(project.project_dir, clip.file_path, "audio", AUDIO_EXTS)
         
-        with wave.open(clip_abspath, "rb") as wf:
+            with wave.open(clip_abspath, "rb") as wf:
+                data = wf.readframes(wf.getnframes())
             # クリップごとの音量を調整（必要なら）
-            data = wf.readframes(wf.getnframes())
             if clip.volume != 1.0:
                 dtype = np.int16 if sampwidth == 2 else np.uint8
                 arr = np.frombuffer(data, dtype=dtype).astype(np.float32)
                 arr *= clip.volume
                 arr = np.clip(arr, np.iinfo(dtype).min, np.iinfo(dtype).max).astype(dtype)
                 data = arr.tobytes()
-            audio_segments.append(data)
+            out.writeframes(data)
             
         # gap_after（無音）の挿入
-        gap = clip.gap_after if idx < len(timeline.clips_timeline) - 1 else 5.0
-        if gap > 0:
-            silence_frames = int(gap * framerate)
-            silence_bytes = b"\x00" * silence_frames * nchannels * sampwidth
-            audio_segments.append(silence_bytes)
+            gap = clip.gap_after if idx < len(timeline.clips_timeline) - 1 else 5.0
+            if gap > 0:
+                silence_frames = int(gap * framerate)
+                silence_bytes = b"\x00" * silence_frames * nchannels * sampwidth
+                out.writeframes(silence_bytes)
             
-    combined_audio = b"".join(audio_segments)
-    with wave.open(temp_voice_wav, "wb") as out:
-        out.setparams(params)
-        out.writeframes(combined_audio)
         
     # 2. 映像フレームの生成
     log_callback("映像レンダリングを開始します...")
@@ -332,7 +346,7 @@ def render_movie(project: Project, log_callback=print):
     bg_cache = {}
     for bg_set in project.backgrounds:
         if bg_set.enabled:
-            img_abspath = os.path.abspath(os.path.join(project.project_dir, bg_set.file_path))
+            img_abspath = resolve_asset_path(project.project_dir, bg_set.file_path, "images", IMAGE_EXTS)
             if os.path.exists(img_abspath):
                 try:
                     img = Image.open(img_abspath)
@@ -377,16 +391,78 @@ def render_movie(project: Project, log_callback=print):
 
     # imageio ライターの開始
     writer = imageio.get_writer(temp_video_no_audio, fps=project.fps, codec="libx264", quality=8, macro_block_size=16)
+    clip_times_by_id = {
+        entry["clip"].id: (entry["start"], entry["end"], entry["total"])
+        for entry in timeline.clips_timeline
+    }
+    bg_ranges = []
+    for bg_set in project.backgrounds:
+        if not bg_set.enabled:
+            continue
+        start_times = clip_times_by_id.get(bg_set.start_clip_id)
+        end_times = clip_times_by_id.get(bg_set.end_clip_id)
+        if start_times and end_times:
+            bg_ranges.append((bg_set, start_times[0], end_times[2]))
+    bg_range_by_id = {bg_set.id: (start, end) for bg_set, start, end in bg_ranges}
+    prev_bg_cache = {}
+
+    def get_bg_for_time(t):
+        for bg_set, start, end in bg_ranges:
+            if start <= t < end:
+                return bg_set
+        return None
+
+    def get_transition_background(t, active_bg_set=None):
+        curr_bg_set = active_bg_set or get_bg_for_time(t)
+        if not curr_bg_set or curr_bg_set.id not in bg_cache:
+            return None, 0.0, None
+
+        start, _ = bg_range_by_id.get(curr_bg_set.id, (0.0, 0.0))
+        prev_bg_set = prev_bg_cache.get(curr_bg_set.id)
+        if curr_bg_set.id not in prev_bg_cache:
+            prev_bg_set = get_bg_for_time(start - 0.05) if start > 0.05 else None
+            prev_bg_cache[curr_bg_set.id] = prev_bg_set
+
+        if prev_bg_set and prev_bg_set.id != curr_bg_set.id and prev_bg_set.id in bg_cache:
+            dt = t - start
+            if 0 <= dt < curr_bg_set.transition_duration:
+                return bg_cache[curr_bg_set.id], dt / curr_bg_set.transition_duration, bg_cache[prev_bg_set.id]
+
+        return bg_cache[curr_bg_set.id], 1.0, None
+
+    writer = imageio.get_writer(temp_video_no_audio, fps=project.fps, codec="libx264", quality=8, macro_block_size=16)
     subtitle_font = ImageFont.truetype(font_path, project.subtitle_style.font_size)
+    subtitle_overlays = {
+        entry["clip"].id: build_subtitle_overlay(
+            entry["clip"].subtitle,
+            project.subtitle_style,
+            subtitle_font,
+            project.width,
+            project.height
+        )
+        for entry in timeline.clips_timeline
+        if entry["clip"].subtitle
+    }
+    veil = Image.new("RGBA", (project.width, project.height), (0, 0, 0, 55))
+    black_veil_cache = {}
     
     total_frames = int(timeline.total_duration * project.fps)
+    active_bg_set = None
+    active_clip_idx = 0
     
     try:
         for f_idx in range(total_frames):
             t = f_idx / project.fps
             
             # 背景の取得と合成
-            bg_img, blend_ratio, prev_bg_img = get_transition_background(t)
+            if active_bg_set:
+                bg_start, bg_end = bg_range_by_id.get(active_bg_set.id, (0.0, 0.0))
+                if not (bg_start <= t < bg_end):
+                    active_bg_set = None
+            if not active_bg_set:
+                active_bg_set = get_bg_for_time(t)
+
+            bg_img, blend_ratio, prev_bg_img = get_transition_background(t, active_bg_set)
             if bg_img:
                 if prev_bg_img and blend_ratio < 1.0:
                     # イージング
@@ -395,23 +471,26 @@ def render_movie(project: Project, log_callback=print):
                 else:
                     frame = bg_img.copy()
             else:
+                frame = Image.new("RGBA", (project.width, project.height), (0, 0, 0, 255))
                 # 背景が無い場合は黒
                 frame = Image.new("RGBA", (project.width, project.height), (0, 0, 0, 255))
                 
             # 暗幕 (全体を少し暗くして字幕の視認性を上げる)
-            veil = Image.new("RGBA", (project.width, project.height), (0, 0, 0, 55))
             frame = Image.alpha_composite(frame, veil)
             
             # 字幕の描画 (該当クリップの音声が鳴っている間のみ)
+            while active_clip_idx < len(timeline.clips_timeline) and t >= timeline.clips_timeline[active_clip_idx]["end"]:
+                active_clip_idx += 1
             active_clip_entry = None
-            for entry in timeline.clips_timeline:
+            if active_clip_idx < len(timeline.clips_timeline):
+                entry = timeline.clips_timeline[active_clip_idx]
                 if entry["start"] <= t < entry["end"]:
                     active_clip_entry = entry
-                    break
-                    
+
             if active_clip_entry:
-                text = active_clip_entry["clip"].subtitle
-                frame = draw_subtitle_on_frame(frame, text, project.subtitle_style, subtitle_font, project.width, project.height)
+                overlay = subtitle_overlays.get(active_clip_entry["clip"].id)
+                if overlay is not None:
+                    frame = Image.alpha_composite(frame, overlay)
                 
             # 最後の余韻部分での全体フェードアウト (最後の5秒)
             last_clip_end = timeline.clips_timeline[-1]["end"]
@@ -420,7 +499,11 @@ def render_movie(project: Project, log_callback=print):
                 fade_len = 5.0
                 ratio = min(1.0, max(0.0, dt / fade_len))
                 ratio = 0.5 - 0.5 * math.cos(math.pi * ratio)
-                black_veil = Image.new("RGBA", (project.width, project.height), (0, 0, 0, int(255 * ratio)))
+                alpha = int(255 * ratio)
+                black_veil = black_veil_cache.get(alpha)
+                if black_veil is None:
+                    black_veil = Image.new("RGBA", (project.width, project.height), (0, 0, 0, alpha))
+                    black_veil_cache[alpha] = black_veil
                 frame = Image.alpha_composite(frame, black_veil)
                 
             writer.append_data(np.array(frame.convert("RGB")))
@@ -440,7 +523,7 @@ def render_movie(project: Project, log_callback=print):
     # 有効なBGMトラックの入力アセットを追加
     active_bgms = [bgm for bgm in project.bgm_tracks if bgm.enabled]
     for bgm in active_bgms:
-        bgm_abspath = os.path.abspath(os.path.join(project.project_dir, bgm.file_path))
+        bgm_abspath = resolve_asset_path(project.project_dir, bgm.file_path, "bgm", BGM_EXTS)
         if bgm.loop:
             # ループ設定
             cmd.extend(["-stream_loop", "-1"])

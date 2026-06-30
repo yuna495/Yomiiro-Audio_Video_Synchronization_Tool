@@ -1544,7 +1544,7 @@ class ReadingVideoApp(QMainWindow):
             row = bg_selected[0].row()
             if row < len(self.project.backgrounds):
                 bg_set = self.project.backgrounds[row]
-                img_path = os.path.abspath(os.path.join(self.project.project_dir, bg_set.file_path))
+                img_path = core.resolve_asset_path(self.project.project_dir, bg_set.file_path, "images", core.IMAGE_EXTS)
                 if os.path.exists(img_path):
                     try:
                         img = Image.open(img_path)
@@ -1623,6 +1623,16 @@ class ReadingVideoApp(QMainWindow):
 
         if not self.project.backgrounds:
             QMessageBox.critical(self, "エラー", "背景画像が登録されていません。")
+            return
+
+        output_path = self.output_ent.text().strip()
+        try:
+            self.project.set_output_path(
+                output_path,
+                allow_external=self.project.is_trusted_external_output(output_path)
+            )
+        except ValueError as e:
+            QMessageBox.critical(self, "繧ｨ繝ｩ繝ｼ", str(e))
             return
 
         self.is_generating = True
@@ -1708,7 +1718,15 @@ class ReadingVideoApp(QMainWindow):
     def save_project(self):
         if self.project:
             self.sync_project_settings()
-            self.project.output_path = self.output_ent.text().strip()
+            output_path = self.output_ent.text().strip()
+            try:
+                self.project.set_output_path(
+                    output_path,
+                    allow_external=self.project.is_trusted_external_output(output_path)
+                )
+            except ValueError as e:
+                QMessageBox.critical(self, "繧ｨ繝ｩ繝ｼ", str(e))
+                return
             self.project.save()
             self.log_write("プロジェクト設定を保存しました。")
             QMessageBox.information(self, "保存完了", "プロジェクトを保存しました。")
@@ -1728,14 +1746,25 @@ class ReadingVideoApp(QMainWindow):
             "MP4 Video (*.mp4)"
         )
         if file:
+            allow_external = True
             try:
                 rel = os.path.relpath(file, self.project.project_dir)
-                if not rel.startswith(".."):
+                rel_abs = os.path.abspath(os.path.join(self.project.project_dir, rel))
+                if os.path.commonpath([os.path.realpath(self.project.project_dir), os.path.realpath(rel_abs)]) == os.path.realpath(self.project.project_dir):
                     file = rel
+                    allow_external = False
             except ValueError:
                 pass
-            self.output_ent.setText(file)
-            self.project.output_path = file
+
+            try:
+                self.project.set_output_path(file, allow_external=allow_external)
+            except ValueError as e:
+                QMessageBox.critical(self, "繧ｨ繝ｩ繝ｼ", str(e))
+                return
+
+            self.output_ent.blockSignals(True)
+            self.output_ent.setText(self.project.output_path)
+            self.output_ent.blockSignals(False)
 
     def mousePressEvent(self, event):
         if hasattr(self, "bg_table"):
@@ -1774,7 +1803,7 @@ class ReadingVideoApp(QMainWindow):
             self.media_player.stop()
         else:
             self.active_playback_type = "clip"
-            clip_abspath = os.path.abspath(os.path.join(self.project.project_dir, clip.file_path))
+            clip_abspath = core.resolve_asset_path(self.project.project_dir, clip.file_path, "audio", core.AUDIO_EXTS)
             if not os.path.exists(clip_abspath):
                 QMessageBox.warning(self, "警告", "音声ファイルが見つかりません。")
                 return
@@ -1802,7 +1831,7 @@ class ReadingVideoApp(QMainWindow):
         else:
             self.active_playback_type = "bgm"
             self.current_audition_bgm = bgm
-            bgm_abspath = os.path.abspath(os.path.join(self.project.project_dir, bgm.file_path))
+            bgm_abspath = core.resolve_asset_path(self.project.project_dir, bgm.file_path, "bgm", core.BGM_EXTS)
             if not os.path.exists(bgm_abspath):
                 QMessageBox.warning(self, "警告", "BGMファイルが見つかりません。")
                 return
