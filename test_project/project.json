@@ -50,7 +50,7 @@
       "id": "clip_0005",
       "file_path": "audio/clip_0005.wav",
       "display_name": "005_暁記ミタマ（ノーマル）_少しだけ肩を竦め、….wav",
-      "subtitle": "少しだけ",
+      "subtitle": "これで良いでしょうか？",
       "gap_after": 0.5,
       "volume": 1.0,
       "enabled": true
@@ -118,6 +118,7 @@
     "position": "bottom",
     "margin_bottom": 95,
     "max_width": 1500,
-    "line_spacing": 16
+    "line_spacing": 16,
+    "direction": "vertical"
   }
 }

@@ -149,6 +149,7 @@ class AppConfig:
         self.box_color = "#000000"
         self.box_opacity = 0.5
         self.margin_bottom = 95
+        self.direction = "horizontal"
         self.load()
 
     def load(self):
@@ -166,6 +167,7 @@ class AppConfig:
                 self.box_color = style.get("box_color", "#000000")
                 self.box_opacity = style.get("box_opacity", 0.5)
                 self.margin_bottom = style.get("margin_bottom", 95)
+                self.direction = style.get("direction", "horizontal")
             except Exception:
                 pass
 
@@ -180,7 +182,8 @@ class AppConfig:
                 "text_color": self.text_color,
                 "box_color": self.box_color,
                 "box_opacity": self.box_opacity,
-                "margin_bottom": self.margin_bottom
+                "margin_bottom": self.margin_bottom,
+                "direction": self.direction
             }
         }
         try:
@@ -195,7 +198,7 @@ class ConfigDialog(QDialog):
         self.app_config = app_config
         self.project = project
         self.setWindowTitle("アプリ・プロジェクト設定")
-        self.resize(500, 520)
+        self.resize(500, 560)
 
         # システムフォント一覧の取得
         self.system_fonts = []
@@ -299,6 +302,12 @@ class ConfigDialog(QDialog):
         self.app_margin.setValue(self.app_config.margin_bottom)
         form.addWidget(self.app_margin, 7, 1)
 
+        form.addWidget(QLabel("字幕書字方向:"), 8, 0)
+        self.app_direction_combo = QComboBox()
+        self.app_direction_combo.addItems(["横書き", "縦書き"])
+        self.app_direction_combo.setCurrentText("縦書き" if self.app_config.direction == "vertical" else "横書き")
+        form.addWidget(self.app_direction_combo, 8, 1)
+
         lay.addStretch()
 
     def build_proj_tab(self):
@@ -351,6 +360,11 @@ class ConfigDialog(QDialog):
         self.proj_margin.setRange(0, 500)
         self.proj_form.addWidget(self.proj_margin, 7, 1)
 
+        self.proj_form.addWidget(QLabel("字幕書字方向:"), 8, 0)
+        self.proj_direction_combo = QComboBox()
+        self.proj_direction_combo.addItems(["横書き", "縦書き"])
+        self.proj_form.addWidget(self.proj_direction_combo, 8, 1)
+
         lay.addStretch()
 
         # 連動設定
@@ -370,6 +384,7 @@ class ConfigDialog(QDialog):
             self.proj_box_color.setText(style.box_color)
             self.proj_box_opacity.setValue(style.box_opacity)
             self.proj_margin.setValue(style.margin_bottom)
+            self.proj_direction_combo.setCurrentText("縦書き" if style.direction == "vertical" else "横書き")
 
         self.on_proj_chk_toggled(self.proj_chk.isChecked())
 
@@ -386,6 +401,7 @@ class ConfigDialog(QDialog):
         self.app_config.box_color = self.app_box_color.text().strip()
         self.app_config.box_opacity = self.app_box_opacity.value()
         self.app_config.margin_bottom = self.app_margin.value()
+        self.app_config.direction = "vertical" if self.app_direction_combo.currentText() == "縦書き" else "horizontal"
         self.app_config.save()
 
         # 2. プロジェクト個別設定を保存
@@ -401,6 +417,7 @@ class ConfigDialog(QDialog):
                 style.box_color = self.proj_box_color.text().strip()
                 style.box_opacity = self.proj_box_opacity.value()
                 style.margin_bottom = self.proj_margin.value()
+                style.direction = "vertical" if self.proj_direction_combo.currentText() == "縦書き" else "horizontal"
             self.project.save()
 
         self.accept()
@@ -1578,6 +1595,7 @@ class ReadingVideoApp(QMainWindow):
             style.margin_bottom,
             style.max_width,
             style.line_spacing,
+            style.direction,
         )
 
     def preview_background_key(self):
@@ -1677,6 +1695,7 @@ class ReadingVideoApp(QMainWindow):
     def open_config_dialog(self):
         dlg = ConfigDialog(self.app_config, self.project, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.clear_preview_cache()
             self.sync_project_settings()
             self.update_preview()
             self.refresh_clip_list()
@@ -1696,6 +1715,7 @@ class ReadingVideoApp(QMainWindow):
             style.box_color = self.app_config.box_color
             style.box_opacity = self.app_config.box_opacity
             style.margin_bottom = self.app_config.margin_bottom
+            style.direction = self.app_config.direction
             self.project.save()
 
     # ------------------

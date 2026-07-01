@@ -1,0 +1,11 @@
+Yomiiro
+
+Yomiiro is an open-source reading video synchronization tool.
+
+Copyright (c) 2026 yuna495
+
+This software is released under the MIT License.
+See LICENSE for details.
+
+This software may use third-party libraries and tools.
+See THIRD_PARTY_LICENSES.txt for details.

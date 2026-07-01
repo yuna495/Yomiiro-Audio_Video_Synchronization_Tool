@@ -1,0 +1,21 @@
+Third-party licenses
+
+This application uses the following third-party software:
+
+- FFmpeg
+  License: LGPL v2.1 or later / GPL depending on build configuration
+  Website: https://ffmpeg.org/
+  Copyright: FFmpeg developers
+
+- Python
+  License: Python Software Foundation License
+
+- PySide6 / Qt for Python
+  License: LGPL / GPL / commercial license depending on distribution
+  Website: https://doc.qt.io/qtforpython/
+
+- Pillow
+  License: HPND
+
+- NumPy
+  License: BSD

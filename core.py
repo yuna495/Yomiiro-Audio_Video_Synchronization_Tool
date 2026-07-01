@@ -201,7 +201,7 @@ class BgmSetting:
         )
 
 class SubtitleStyle:
-    def __init__(self, font_family="Yu Mincho", font_size=58, text_color="#EEF1F8", shadow_color="#000000", box_color="#000000", box_opacity=0.5, position="bottom", margin_bottom=95, max_width=1500, line_spacing=16):
+    def __init__(self, font_family="Yu Mincho", font_size=58, text_color="#EEF1F8", shadow_color="#000000", box_color="#000000", box_opacity=0.5, position="bottom", margin_bottom=95, max_width=1500, line_spacing=16, direction="horizontal"):
         self.font_family = font_family
         self.font_size = font_size
         self.text_color = text_color
@@ -212,6 +212,7 @@ class SubtitleStyle:
         self.margin_bottom = margin_bottom
         self.max_width = max_width
         self.line_spacing = line_spacing
+        self.direction = direction
 
     def to_dict(self):
         return {
@@ -224,7 +225,8 @@ class SubtitleStyle:
             "position": self.position,
             "margin_bottom": self.margin_bottom,
             "max_width": self.max_width,
-            "line_spacing": self.line_spacing
+            "line_spacing": self.line_spacing,
+            "direction": self.direction
         }
 
     @classmethod
@@ -239,7 +241,8 @@ class SubtitleStyle:
             position=d.get("position", "bottom"),
             margin_bottom=d.get("margin_bottom", 95),
             max_width=d.get("max_width", 1500),
-            line_spacing=d.get("line_spacing", 16)
+            line_spacing=d.get("line_spacing", 16),
+            direction=d.get("direction", "horizontal")
         )
 
 class Project:

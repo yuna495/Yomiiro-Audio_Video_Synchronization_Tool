@@ -178,6 +178,41 @@ def wrap_text_japanese(text, font, max_width):
         lines.append(current)
     return lines
 
+# 縦書き用禁則文字定義
+KINSOKU_HEAD = set("、。）」』）】｝ゝゞァィゥェォッャュョヮヵヶっゃゅょゎぁぃぅぇぉっ?,.，．")
+KINSOKU_TAIL = set("「『（【｛")
+
+def wrap_text_japanese_vertical(text, font, max_height):
+    lines = []
+    for segment in text.split("\n"):
+        if not segment:
+            lines.append("")
+            continue
+        
+        current = ""
+        for ch in segment:
+            char_h = font.size
+            test_h = (len(current) + 1) * char_h
+            
+            if test_h <= max_height:
+                current += ch
+            else:
+                # 禁則処理
+                if ch in KINSOKU_HEAD:
+                    current += ch
+                    continue
+                if current and current[-1] in KINSOKU_TAIL:
+                    tail_char = current[-1]
+                    current = current[:-1]
+                    lines.append(current)
+                    current = tail_char + ch
+                else:
+                    lines.append(current)
+                    current = ch
+        if current:
+            lines.append(current)
+    return lines
+
 def build_subtitle_overlay(text, style, font, width, height):
     if not text:
         return None
@@ -185,53 +220,137 @@ def build_subtitle_overlay(text, style, font, width, height):
     overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     
-    lines = wrap_text_japanese(text, font, style.max_width)
-    
-    line_bboxes = [draw.textbbox((0, 0), line, font=font) for line in lines]
-    line_widths = [bbox[2] - bbox[0] for bbox in line_bboxes]
-    line_heights = [bbox[3] - bbox[1] for bbox in line_bboxes]
-    
-    text_w = max(line_widths) if line_widths else 0
-    text_h = sum(line_heights) + style.line_spacing * (len(lines) - 1) if line_heights else 0
-    
-    padding_x = 42
-    padding_y = 26
-    
-    box_w = text_w + padding_x * 2
-    box_h = text_h + padding_y * 2
-    box_x = (width - box_w) // 2
-    
-    # 位置の設定
-    if style.position == "top":
-        box_y = style.margin_bottom
-    elif style.position == "center":
-        box_y = (height - box_h) // 2
-    else: # bottom
-        box_y = height - style.margin_bottom - box_h
-        
-    box_color_rgba = hex_to_rgba(style.box_color, style.box_opacity)
-    
-    draw.rounded_rectangle(
-        (box_x, box_y, box_x + box_w, box_y + box_h),
-        radius=22,
-        fill=box_color_rgba,
-    )
-    
     text_color_rgba = hex_to_rgba(style.text_color, 1.0)
     shadow_color_rgba = hex_to_rgba(style.shadow_color, 0.75)
+
+    direction = getattr(style, "direction", "horizontal")
     
-    y = box_y + padding_y
-    for idx, line in enumerate(lines):
-        line_w = line_widths[idx]
-        line_h = line_heights[idx]
-        x = (width - line_w) // 2
-        # シャドウ/エッジ
-        draw.text((x + 3, y + 3), line, font=font, fill=shadow_color_rgba)
-        draw.text((x, y), line, font=font, fill=text_color_rgba)
-        y += line_h + style.line_spacing
+    if direction == "vertical":
+        padding_x = 35
+        padding_y = 35
+        
+        max_height = height - style.margin_bottom * 2
+        if max_height < font.size * 2:
+            max_height = height - 100
+            
+        lines = wrap_text_japanese_vertical(text, font, max_height)
+        if not lines:
+            return None
+            
+        text_w = len(lines) * font.size + style.line_spacing * (len(lines) - 1)
+        text_h = max(len(line) for line in lines) * font.size
+        
+        box_w = text_w + padding_x * 2
+        box_h = text_h + padding_y * 2
+        
+        box_y = (height - box_h) // 2
+        
+        if style.position == "top":
+            box_x = width - style.margin_bottom - box_w
+        elif style.position == "center":
+            box_x = (width - box_w) // 2
+        else: # bottom
+            box_x = width - style.margin_bottom * 2 - box_w
+            
+        if box_x < 20:
+            box_x = 20
+        if box_x + box_w > width - 20:
+            box_x = width - 20 - box_w
+
+        box_color_rgba = hex_to_rgba(style.box_color, style.box_opacity)
+        
+        draw.rounded_rectangle(
+            (box_x, box_y, box_x + box_w, box_y + box_h),
+            radius=22,
+            fill=box_color_rgba,
+        )
+        
+        ROTATED_CHARS = set("「」『』（）【】[]{}ー〜-～＝=…‥" + "─│┌┐┘└├┤┬┴┼━┃┏┓┛┗┣┫┳┻╋")
+        PUNCTUATION_CHARS = set("、。,.，．")
+        SMALL_CHARS = set("っゃゅょゎぁぃぅぇぉッャュョヮァィゥェォっ")
+
+        start_x = box_x + padding_x + text_w - font.size
+        
+        for l_idx, line in enumerate(lines):
+            line_x = start_x - l_idx * (font.size + style.line_spacing)
+            line_y = box_y + padding_y
+            
+            for c_idx, char in enumerate(line):
+                y = line_y + c_idx * font.size
+                
+                if char in ROTATED_CHARS:
+                    char_size = font.size * 2
+                    char_img = Image.new("RGBA", (char_size, char_size), (0, 0, 0, 0))
+                    char_draw = ImageDraw.Draw(char_img)
+                    
+                    c_bbox = char_draw.textbbox((0, 0), char, font=font)
+                    c_w = c_bbox[2] - c_bbox[0]
+                    c_h = c_bbox[3] - c_bbox[1]
+                    cx = (char_size - c_w) // 2 - c_bbox[0]
+                    cy = (char_size - c_h) // 2 - c_bbox[1]
+                    
+                    char_draw.text((cx + 3, cy + 3), char, font=font, fill=shadow_color_rgba)
+                    char_draw.text((cx, cy), char, font=font, fill=text_color_rgba)
+                    
+                    rotated = char_img.rotate(-90, resample=Image.Resampling.BICUBIC)
+                    
+                    ox = int(line_x + font.size * 0.5 - char_size * 0.5)
+                    oy = int(y + font.size * 0.5 - char_size * 0.5)
+                    overlay.alpha_composite(rotated, (ox, oy))
+                else:
+                    ox = 0
+                    oy = 0
+                    if char in PUNCTUATION_CHARS:
+                        ox = int(font.size * 0.55)
+                        oy = -int(font.size * 0.35)
+                    elif char in SMALL_CHARS:
+                        ox = int(font.size * 0.12)
+                        oy = -int(font.size * 0.05)
+                    
+                    draw.text((line_x + ox + 3, y + oy + 3), char, font=font, fill=shadow_color_rgba)
+                    draw.text((line_x + ox, y + oy), char, font=font, fill=text_color_rgba)
+    else:
+        lines = wrap_text_japanese(text, font, style.max_width)
+        
+        line_bboxes = [draw.textbbox((0, 0), line, font=font) for line in lines]
+        line_widths = [bbox[2] - bbox[0] for bbox in line_bboxes]
+        line_heights = [bbox[3] - bbox[1] for bbox in line_bboxes]
+        
+        text_w = max(line_widths) if line_widths else 0
+        text_h = sum(line_heights) + style.line_spacing * (len(lines) - 1) if line_heights else 0
+        
+        padding_x = 42
+        padding_y = 26
+        
+        box_w = text_w + padding_x * 2
+        box_h = text_h + padding_y * 2
+        box_x = (width - box_w) // 2
+        
+        if style.position == "top":
+            box_y = style.margin_bottom
+        elif style.position == "center":
+            box_y = (height - box_h) // 2
+        else: # bottom
+            box_y = height - style.margin_bottom - box_h
+            
+        box_color_rgba = hex_to_rgba(style.box_color, style.box_opacity)
+        
+        draw.rounded_rectangle(
+            (box_x, box_y, box_x + box_w, box_y + box_h),
+            radius=22,
+            fill=box_color_rgba,
+        )
+        
+        y = box_y + padding_y
+        for idx, line in enumerate(lines):
+            line_w = line_widths[idx]
+            line_h = line_heights[idx]
+            x = (width - line_w) // 2
+            draw.text((x + 3, y + 3), line, font=font, fill=shadow_color_rgba)
+            draw.text((x, y), line, font=font, fill=text_color_rgba)
+            y += line_h + style.line_spacing
 
     return overlay
-
 
 def draw_subtitle_on_frame(frame, text, style, font, width, height):
     overlay = build_subtitle_overlay(text, style, font, width, height)
